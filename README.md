@@ -1,0 +1,3 @@
+# salafic
+
+Masjid management platform
