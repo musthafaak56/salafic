@@ -10,6 +10,7 @@ import {
 } from '../lib/firestore'
 import {
   PRAYER_KEYS,
+  format12h,
   formatCurrency,
   formatDateTime,
   fullDateLabel,
@@ -73,7 +74,7 @@ function NextPrayerPanel({ next }) {
         <div>
           <p className="text-sm font-medium text-ink-secondary">Next prayer</p>
           <p className="mt-1 text-5xl font-semibold tracking-tight text-ink tabular-nums sm:text-6xl">
-            {next.time}
+            {format12h(next.time)}
           </p>
           <p className="mt-1 text-sm text-ink-secondary">
             {next.label} {usesIqama ? 'iqama' : 'adhaan'} ·{' '}
@@ -82,7 +83,9 @@ function NextPrayerPanel({ next }) {
           {usesIqama && next.adhaan ? (
             <p className="mt-0.5 text-xs text-ink-secondary">
               Adhaan at{' '}
-              <span className="font-medium tabular-nums">{next.adhaan}</span>
+              <span className="font-medium tabular-nums">
+                {format12h(next.adhaan)}
+              </span>
             </p>
           ) : null}
         </div>
@@ -125,13 +128,13 @@ function PrayerTable({ prayerTimes, next, loading }) {
               <p className="flex items-baseline justify-between gap-1 text-sm">
                 <span className="text-xs text-ink-secondary">Adhaan</span>
                 <span className="font-semibold tabular-nums text-ink">
-                  {adhaan || '—'}
+                  {format12h(adhaan)}
                 </span>
               </p>
               <p className="flex items-baseline justify-between gap-1 text-sm">
                 <span className="text-xs text-ink-secondary">Iqama</span>
                 <span className="font-semibold tabular-nums text-ink">
-                  {iqama || '—'}
+                  {format12h(iqama)}
                 </span>
               </p>
               {gap ? (

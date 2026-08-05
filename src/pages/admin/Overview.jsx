@@ -6,6 +6,7 @@ import {
   getAllExpenses,
 } from '../../lib/firestore'
 import {
+  format12h,
   formatCurrency,
   formatTime,
   fullDateLabel,
@@ -101,7 +102,7 @@ export default function Overview() {
                   <p className="text-sm text-ink">
                     Next:{' '}
                     <span className="font-semibold">{next.label}</span> at{' '}
-                    <span className="font-semibold tabular-nums">{next.time}</span>
+                    <span className="font-semibold tabular-nums">{format12h(next.time)}</span>
                   </p>
                 ) : null}
                 <StatusBadge tone={stale ? 'default' : 'positive'}>

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { getLatestPrayerTimes } from '../../lib/firestore'
 import {
   PRAYER_KEYS,
+  format12h,
   formatDateTime,
   getNextPrayer,
   iqamaGapLabel,
@@ -69,7 +70,9 @@ export default function PrayerTimes() {
               <p className="text-sm text-ink">
                 Next:{' '}
                 <span className="font-semibold">{next.label}</span> at{' '}
-                <span className="font-semibold tabular-nums">{next.time}</span>
+                <span className="font-semibold tabular-nums">
+                  {format12h(next.time)}
+                </span>
               </p>
             ) : null}
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
@@ -86,13 +89,13 @@ export default function PrayerTimes() {
                       <div>
                         <dt className="text-xs text-ink-secondary">Adhaan</dt>
                         <dd className="font-semibold tabular-nums text-ink">
-                          {adhaan || '—'}
+                          {format12h(adhaan)}
                         </dd>
                       </div>
                       <div>
                         <dt className="text-xs text-ink-secondary">Iqama</dt>
                         <dd className="font-semibold tabular-nums text-ink">
-                          {iqama || '—'}
+                          {format12h(iqama)}
                         </dd>
                       </div>
                     </dl>

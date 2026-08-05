@@ -71,7 +71,7 @@ export function prayerEntry(value) {
 
 function toMinutes(hhmm) {
   const [h, m] = String(hhmm ?? '').split(':').map(Number)
-  if (Number.isNaN(h) || Number.isNaN(m)) return null
+  if (!Number.isFinite(h) || !Number.isFinite(m)) return null
   return h * 60 + m
 }
 
@@ -100,6 +100,20 @@ export function iqamaGapLabel(adhaan, iqama) {
   const mins = minutesBetween(adhaan, iqama)
   if (mins === null) return null
   return `+${mins} min`
+}
+
+// Converts an internal "HH:mm" string to 12-hour display, e.g. "05:01 AM".
+export function format12h(hhmm) {
+  if (!hhmm) return '—'
+  const [h, m] = String(hhmm).split(':').map(Number)
+  if (Number.isNaN(h) || Number.isNaN(m)) return '—'
+  const d = new Date()
+  d.setHours(h, m, 0, 0)
+  return d.toLocaleTimeString('en-US', {
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: true,
+  })
 }
 
 // The next prayer is computed from the iqama time (when the
