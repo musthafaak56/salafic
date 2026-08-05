@@ -95,7 +95,7 @@ export default function AppHeader({ area = 'public' }) {
 
       {area === 'admin' ? (
         <nav
-          className="flex items-center gap-1 overflow-x-auto border-t border-line px-4 md:hidden"
+          className="flex touch-pan-x items-center gap-1 overflow-x-auto border-t border-line px-4 [overscroll-behavior-x:contain] md:hidden"
           aria-label="Admin"
         >
           {adminNav.map((item) => (
