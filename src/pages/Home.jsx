@@ -11,9 +11,10 @@ import {
 import {
   PRAYER_KEYS,
   formatCurrency,
-  formatTime,
+  formatDateTime,
   fullDateLabel,
   getNextPrayer,
+  iqamaGapLabel,
   isStalePrayerTimes,
   prayerEntry,
   relativeDayLabel,
@@ -99,6 +100,7 @@ function PrayerTable({ prayerTimes, next, loading }) {
       {PRAYER_KEYS.map((p) => {
         const isNext = next?.key === p.key
         const { adhaan, iqama } = prayerEntry(prayerTimes[p.key])
+        const gap = iqamaGapLabel(adhaan, iqama)
         return (
           <div
             key={p.key}
@@ -125,6 +127,11 @@ function PrayerTable({ prayerTimes, next, loading }) {
                   {iqama || '—'}
                 </span>
               </p>
+              {gap ? (
+                <p className="border-t border-line/70 pt-1.5 text-xs font-medium text-primary tabular-nums">
+                  {gap} after adhaan
+                </p>
+              ) : null}
             </div>
           </div>
         )
@@ -213,12 +220,12 @@ export default function Home() {
               Prayer times
             </h2>
             {prayerTimes ? (
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 <StatusBadge tone={stale ? 'default' : 'positive'}>
                   {relativeDayLabel(prayerTimes.date)}
                 </StatusBadge>
                 <span className="text-xs text-ink-secondary">
-                  Updated {formatTime(prayerTimes.updatedAt)}
+                  Updated {formatDateTime(prayerTimes.updatedAt)}
                 </span>
               </div>
             ) : null}

@@ -43,6 +43,19 @@ export function fullDateLabel(date = new Date()) {
   })
 }
 
+export function formatDateTime(value) {
+  if (!value) return '—'
+  const d =
+    value && typeof value.toDate === 'function' ? value.toDate() : new Date(value)
+  return d.toLocaleString('en-IN', {
+    day: 'numeric',
+    month: 'short',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: true,
+  })
+}
+
 /* ---------- Prayer time model ---------- */
 
 // Normalizes a stored prayer entry (new object or legacy string)
@@ -60,6 +73,33 @@ function toMinutes(hhmm) {
   const [h, m] = String(hhmm ?? '').split(':').map(Number)
   if (Number.isNaN(h) || Number.isNaN(m)) return null
   return h * 60 + m
+}
+
+// Minutes from one HH:mm to another (handles overnight wrap).
+export function minutesBetween(earlier, later) {
+  const a = toMinutes(earlier)
+  const b = toMinutes(later)
+  if (a === null || b === null) return null
+  let diff = b - a
+  if (diff < 0) diff += 24 * 60
+  return diff
+}
+
+// Adds minutes to an HH:mm string (handles rollover).
+export function addMinutes(hhmm, mins) {
+  const a = toMinutes(hhmm)
+  if (a === null || !Number.isFinite(mins)) return hhmm
+  const total = a + mins
+  const h = Math.floor(total / 60) % 24
+  const m = total % 60
+  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`
+}
+
+// Human label for the gap between adhaan and iqama, e.g. "+10 min".
+export function iqamaGapLabel(adhaan, iqama) {
+  const mins = minutesBetween(adhaan, iqama)
+  if (mins === null) return null
+  return `+${mins} min`
 }
 
 // The next prayer is computed from the iqama time (when the

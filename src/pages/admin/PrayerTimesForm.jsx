@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { addPrayerTimes } from '../../lib/firestore'
-import { PRAYER_KEYS, todayISODate } from '../../lib/utils'
+import { PRAYER_KEYS, addMinutes, todayISODate } from '../../lib/utils'
 import { CALCULATION_METHODS, fetchPrayerTimes, getCurrentPosition } from '../../lib/prayerApi'
 import Button from '../../components/Button'
 import Field, { inputClass } from '../../components/Field'
@@ -11,19 +11,23 @@ function emptyValues() {
   )
 }
 
-function addMinutes(hhmm, mins) {
-  const [h, m] = hhmm.split(':').map(Number)
-  if (Number.isNaN(h) || Number.isNaN(m)) return hhmm
-  const total = h * 60 + m + mins
-  const hh = String(Math.floor(total / 60) % 24).padStart(2, '0')
-  const mm = String(total % 60).padStart(2, '0')
-  return `${hh}:${mm}`
+function withGap(values, gap) {
+  return Object.fromEntries(
+    Object.entries(values).map(([key, entry]) => [
+      key,
+      {
+        ...entry,
+        iqama: entry.adhaan ? addMinutes(entry.adhaan, gap) : '',
+      },
+    ])
+  )
 }
 
-export default function PrayerTimesForm({ onSaved }) {
+export default function PrayerTimesForm({ onSaved, defaultGap = 10 }) {
   const [date, setDate] = useState(todayISODate())
   const [values, setValues] = useState(emptyValues)
   const [method, setMethod] = useState('3')
+  const [gap, setGap] = useState(defaultGap)
   const [success, setSuccess] = useState(false)
   const [error, setError] = useState('')
   const [saving, setSaving] = useState(false)
@@ -32,8 +36,21 @@ export default function PrayerTimesForm({ onSaved }) {
   function update(key, part, value) {
     setValues((v) => ({
       ...v,
-      [key]: { ...v[key], [part]: value },
+      [key]: {
+        ...v[key],
+        [part]: value,
+        ...(part === 'adhaan' && value && gap >= 0
+          ? { iqama: addMinutes(value, gap) }
+          : {}),
+      },
     }))
+  }
+
+  function updateGap(e) {
+    const mins = Number(e.target.value)
+    if (!Number.isFinite(mins) || mins < 0) return
+    setGap(mins)
+    setValues((v) => withGap(v, mins))
   }
 
   async function handleFetch() {
@@ -48,7 +65,7 @@ export default function PrayerTimesForm({ onSaved }) {
           if (key === 'location' || !next[key]) continue
           next[key] = {
             adhaan: time,
-            iqama: time ? addMinutes(time, 10) : '',
+            iqama: time ? addMinutes(time, gap) : '',
           }
         }
         return next
@@ -66,7 +83,11 @@ export default function PrayerTimesForm({ onSaved }) {
     setError('')
     setSaving(true)
     try {
-      await addPrayerTimes('main', { date, ...values })
+      await addPrayerTimes('main', {
+        date,
+        iqamaGapMinutes: gap,
+        ...values,
+      })
       setSuccess(true)
       onSaved?.()
     } catch (err) {
@@ -113,14 +134,36 @@ export default function PrayerTimesForm({ onSaved }) {
         </Field>
       </div>
 
-      <Button
-        type="button"
-        variant="outline"
-        onClick={handleFetch}
-        loading={fetching}
-      >
-        {fetching ? 'Detecting location…' : 'Fetch times by location'}
-      </Button>
+      <div className="flex flex-wrap items-end gap-4">
+        <Button
+          type="button"
+          variant="outline"
+          onClick={handleFetch}
+          loading={fetching}
+        >
+          {fetching ? 'Detecting location…' : 'Fetch times by location'}
+        </Button>
+        <Field
+          label="Iqama gap"
+          htmlFor="pt-gap"
+          hint="Minutes after adhaan. Iqama times below update automatically."
+        >
+          <input
+            id="pt-gap"
+            type="number"
+            min="0"
+            max="120"
+            value={gap}
+            onChange={updateGap}
+            className={`${inputClass} w-28`}
+          />
+        </Field>
+      </div>
+
+      <p className="text-xs text-ink-secondary">
+        Iqama times are calculated as adhaan + {gap} min. You can still adjust
+        any individual time below.
+      </p>
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {PRAYER_KEYS.map((p) => (

@@ -2,8 +2,9 @@ import { useEffect, useState } from 'react'
 import { getLatestPrayerTimes } from '../../lib/firestore'
 import {
   PRAYER_KEYS,
-  formatTime,
+  formatDateTime,
   getNextPrayer,
+  iqamaGapLabel,
   isStalePrayerTimes,
   prayerEntry,
   relativeDayLabel,
@@ -49,7 +50,7 @@ export default function PrayerTimes() {
           title="Currently published"
           subtitle={
             current
-              ? `${relativeDayLabel(current.date)} · Updated ${formatTime(current.updatedAt)}`
+              ? `${relativeDayLabel(current.date)} · Updated ${formatDateTime(current.updatedAt)}`
               : 'Nothing published yet'
           }
           action={
@@ -74,6 +75,7 @@ export default function PrayerTimes() {
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
               {PRAYER_KEYS.map((p) => {
                 const { adhaan, iqama } = prayerEntry(current[p.key])
+                const gap = iqamaGapLabel(adhaan, iqama)
                 return (
                   <div
                     key={p.key}
@@ -94,6 +96,11 @@ export default function PrayerTimes() {
                         </dd>
                       </div>
                     </dl>
+                    {gap ? (
+                      <p className="mt-1.5 border-t border-line/70 pt-1.5 text-xs font-medium text-primary tabular-nums">
+                        {gap} after adhaan
+                      </p>
+                    ) : null}
                   </div>
                 )
               })}
@@ -109,7 +116,10 @@ export default function PrayerTimes() {
 
       <Card className="p-6">
         <SectionHeading title="Publish times" />
-        <PrayerTimesForm onSaved={loadData} />
+        <PrayerTimesForm
+          onSaved={loadData}
+          defaultGap={current?.iqamaGapMinutes ?? 10}
+        />
       </Card>
     </div>
   )
