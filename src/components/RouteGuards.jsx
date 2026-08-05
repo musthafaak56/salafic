@@ -1,5 +1,6 @@
 import { Navigate, useLocation } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
+import { AdminLayoutLoading } from '../pages/admin/AdminLayout'
 
 export function ProtectedRoute({ children }) {
   const { user, loading } = useAuth()
@@ -7,7 +8,7 @@ export function ProtectedRoute({ children }) {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-950 text-white">
+      <div className="min-h-screen flex items-center justify-center bg-canvas text-ink">
         <p>Loading…</p>
       </div>
     )
@@ -25,11 +26,7 @@ export function AdminRoute({ children }) {
   const location = useLocation()
 
   if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-950 text-white">
-        <p>Loading…</p>
-      </div>
-    )
+    return <AdminLayoutLoading />
   }
 
   if (!user) {

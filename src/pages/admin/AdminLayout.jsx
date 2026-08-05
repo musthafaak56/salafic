@@ -3,9 +3,25 @@ import { Outlet } from 'react-router-dom'
 import AppHeader from '../../components/AppHeader'
 import AdminSidebar from '../../components/AdminSidebar'
 import PageContainer from '../../components/PageContainer'
+import LoadingState from '../../components/LoadingState'
+
+export function AdminLayoutLoading() {
+  return (
+    <div className="min-h-screen bg-canvas text-ink">
+      <AdminSidebar className="fixed inset-y-0 left-0 z-10 hidden w-64 flex-col border-r border-line bg-surface md:flex" />
+      <div className="md:pl-64">
+        <AppHeader area="admin" />
+        <PageContainer>
+          <LoadingState rows={3} />
+        </PageContainer>
+      </div>
+    </div>
+  )
+}
 
 export default function AdminLayout() {
   const [menuOpen, setMenuOpen] = useState(false)
+  const [collapsed, setCollapsed] = useState(false)
 
   function closeMenu() {
     setMenuOpen(false)
@@ -55,9 +71,17 @@ export default function AdminLayout() {
         />
       ) : null}
 
-      <AdminSidebar className="fixed inset-y-0 left-0 z-10 hidden w-64 flex-col border-r border-line bg-surface md:flex" />
+      <AdminSidebar
+        collapsed={collapsed}
+        onToggle={() => setCollapsed((c) => !c)}
+        className={`fixed inset-y-0 left-0 z-10 hidden flex-col border-r border-line bg-surface transition-[width] duration-200 md:flex ${
+          collapsed ? 'w-16' : 'w-64'
+        }`}
+      />
 
-      <div className="md:pl-64">
+      <div
+        className={`transition-[padding] duration-200 ${collapsed ? 'md:pl-16' : 'md:pl-64'}`}
+      >
         <AppHeader area="admin" onMenuClick={() => setMenuOpen(true)} menuOpen={menuOpen} />
         <PageContainer>
           <Outlet />
