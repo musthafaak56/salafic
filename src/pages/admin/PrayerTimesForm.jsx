@@ -5,19 +5,14 @@ import { CALCULATION_METHODS, fetchPrayerTimes, getCurrentPosition } from '../..
 import Button from '../../components/Button'
 import Field, { inputClass } from '../../components/Field'
 
-function emptyValues() {
-  return Object.fromEntries(
-    PRAYER_KEYS.map((p) => [p.key, { adhaan: '', iqama: '' }])
-  )
-}
-
-function withGap(values, gap) {
+function withGap(values, mins) {
   return Object.fromEntries(
     Object.entries(values).map(([key, entry]) => [
       key,
       {
         ...entry,
-        iqama: entry.adhaan ? addMinutes(entry.adhaan, gap) : '',
+        gap: mins,
+        iqama: entry.adhaan ? addMinutes(entry.adhaan, mins) : '',
       },
     ])
   )
@@ -25,7 +20,11 @@ function withGap(values, gap) {
 
 export default function PrayerTimesForm({ onSaved, defaultGap = 10 }) {
   const [date, setDate] = useState(todayISODate())
-  const [values, setValues] = useState(emptyValues)
+  const [values, setValues] = useState(() =>
+    Object.fromEntries(
+      PRAYER_KEYS.map((p) => [p.key, { adhaan: '', iqama: '', gap: defaultGap }])
+    )
+  )
   const [method, setMethod] = useState('3')
   const [gap, setGap] = useState(defaultGap)
   const [success, setSuccess] = useState(false)
@@ -34,16 +33,32 @@ export default function PrayerTimesForm({ onSaved, defaultGap = 10 }) {
   const [fetching, setFetching] = useState(false)
 
   function update(key, part, value) {
-    setValues((v) => ({
-      ...v,
-      [key]: {
-        ...v[key],
-        [part]: value,
-        ...(part === 'adhaan' && value && gap >= 0
-          ? { iqama: addMinutes(value, gap) }
-          : {}),
-      },
-    }))
+    setValues((v) => {
+      const entry = v[key]
+      const mins = Number(value)
+      if (part === 'adhaan') {
+        return {
+          ...v,
+          [key]: {
+            ...entry,
+            adhaan: value,
+            iqama: value ? addMinutes(value, entry.gap) : '',
+          },
+        }
+      }
+      if (part === 'gap') {
+        if (!Number.isFinite(mins) || mins < 0) return v
+        return {
+          ...v,
+          [key]: {
+            ...entry,
+            gap: mins,
+            iqama: entry.adhaan ? addMinutes(entry.adhaan, mins) : '',
+          },
+        }
+      }
+      return { ...v, [key]: { ...entry, iqama: value } }
+    })
   }
 
   function updateGap(e) {
@@ -63,9 +78,12 @@ export default function PrayerTimesForm({ onSaved, defaultGap = 10 }) {
         const next = { ...v }
         for (const [key, time] of Object.entries(fetched)) {
           if (key === 'location' || !next[key]) continue
+          const entryGap = next[key].gap ?? gap
           next[key] = {
+            ...next[key],
+            gap: entryGap,
             adhaan: time,
-            iqama: time ? addMinutes(time, gap) : '',
+            iqama: time ? addMinutes(time, entryGap) : '',
           }
         }
         return next
@@ -144,9 +162,9 @@ export default function PrayerTimesForm({ onSaved, defaultGap = 10 }) {
           {fetching ? 'Detecting location…' : 'Fetch times by location'}
         </Button>
         <Field
-          label="Iqama gap"
+          label="Apply this gap to all prayers"
           htmlFor="pt-gap"
-          hint="Minutes after adhaan. Iqama times below update automatically."
+          hint="Overrides each prayer's individual gap below."
         >
           <input
             id="pt-gap"
@@ -159,11 +177,6 @@ export default function PrayerTimesForm({ onSaved, defaultGap = 10 }) {
           />
         </Field>
       </div>
-
-      <p className="text-xs text-ink-secondary">
-        Iqama times are calculated as adhaan + {gap} min. You can still adjust
-        any individual time below.
-      </p>
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {PRAYER_KEYS.map((p) => (
@@ -201,6 +214,23 @@ export default function PrayerTimesForm({ onSaved, defaultGap = 10 }) {
                   className={inputClass}
                 />
               </div>
+            </div>
+            <div className="mt-2">
+              <label
+                htmlFor={`pt-${p.key}-gap`}
+                className="mb-1 block text-xs text-ink-secondary"
+              >
+                Gap after adhaan (min)
+              </label>
+              <input
+                id={`pt-${p.key}-gap`}
+                type="number"
+                min="0"
+                max="120"
+                value={values[p.key].gap}
+                onChange={(e) => update(p.key, 'gap', e.target.value)}
+                className={`${inputClass} w-24`}
+              />
             </div>
           </div>
         ))}
