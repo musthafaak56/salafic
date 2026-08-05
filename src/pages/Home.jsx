@@ -66,18 +66,25 @@ function useHomeData() {
 
 function NextPrayerPanel({ next }) {
   if (!next) return null
+  const usesIqama = Boolean(next.iqama)
   return (
     <Card className="border-primary/40 bg-surface-subtle p-6">
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
           <p className="text-sm font-medium text-ink-secondary">Next prayer</p>
-          <p className="mt-1 text-3xl font-semibold tracking-tight text-ink">
-            {next.label}
+          <p className="mt-1 text-5xl font-semibold tracking-tight text-ink tabular-nums sm:text-6xl">
+            {next.time}
           </p>
           <p className="mt-1 text-sm text-ink-secondary">
-            {next.isToday ? 'Today' : 'Tomorrow'} at{' '}
-            <span className="font-semibold text-ink tabular-nums">{next.time}</span>
+            {next.label} {usesIqama ? 'iqama' : 'adhaan'} ·{' '}
+            {next.isToday ? 'Today' : 'Tomorrow'}
           </p>
+          {usesIqama && next.adhaan ? (
+            <p className="mt-0.5 text-xs text-ink-secondary">
+              Adhaan at{' '}
+              <span className="font-medium tabular-nums">{next.adhaan}</span>
+            </p>
+          ) : null}
         </div>
         <StatusBadge tone="primary">Next</StatusBadge>
       </div>
