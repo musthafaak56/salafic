@@ -1,0 +1,29 @@
+- generic [ref=f2e3]:
+  - banner [ref=f2e4]:
+    - generic [ref=f2e5]:
+      - heading [level=1] [ref=f2e6]:
+        - link "Salafic" [ref=f2e7] [cursor=pointer]:
+          - /url: /
+        - text: / Admin
+      - generic [ref=f2e8]:
+        - generic [ref=f2e9]: Mock Superadmin · superadmin
+        - button "Sign out" [ref=f2e10]
+  - main [ref=f2e11]:
+    - generic [ref=f2e12]:
+      - button "Prayer Times" [ref=f2e13]
+      - button "Donations" [ref=f2e14]
+      - button "Expenses" [ref=f2e15]
+    - generic [ref=f2e16]:
+      - generic [ref=f2e17]:
+        - heading "Record Donation" [level=2] [ref=f2e18]
+        - generic [ref=f2e19]:
+          - generic [ref=f2e20]:
+            - generic [ref=f2e21]: Note
+            - textbox "e.g. Friday donation box" [ref=f2e22]
+          - generic [ref=f2e23]:
+            - generic [ref=f2e24]: Amount (₹)
+            - spinbutton [ref=f2e25]
+          - button "Record donation" [ref=f2e26]
+      - generic [ref=f2e27]:
+        - heading "Recent Donations" [level=2] [ref=f2e28]
+        - paragraph [ref=f2e29]: No donations yet.

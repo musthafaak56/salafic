@@ -1,0 +1,32 @@
+- generic [ref=f9e17]:
+  - banner [ref=f9e18]:
+    - generic [ref=f9e19]:
+      - heading "Salafic" [level=1] [ref=f9e20]
+      - generic [ref=f9e21]:
+        - link "Admin Dashboard" [ref=f9e22] [cursor=pointer]:
+          - /url: /admin
+        - generic [ref=f9e23]: Mock User · user
+        - button "Sign out" [ref=f9e24]
+  - main [ref=f9e25]:
+    - generic [ref=f9e26]:
+      - generic [ref=f9e27]:
+        - heading "Total Collected" [level=2] [ref=f9e28]
+        - paragraph [ref=f9e29]: …
+      - generic [ref=f9e30]:
+        - heading "Total Expenses" [level=2] [ref=f9e31]
+        - paragraph [ref=f9e32]: …
+      - generic [ref=f9e33]:
+        - heading "Balance" [level=2] [ref=f9e34]
+        - paragraph [ref=f9e35]: …
+    - generic [ref=f9e36]:
+      - generic [ref=f9e37]:
+        - heading "Prayer Times" [level=2] [ref=f9e38]
+        - generic [ref=f9e39]: — · Updated —
+      - paragraph [ref=f9e40]: Loading…
+    - generic [ref=f9e41]:
+      - generic [ref=f9e42]:
+        - heading "Recent Donations" [level=2] [ref=f9e43]
+        - paragraph [ref=f9e44]: Loading…
+      - generic [ref=f9e45]:
+        - heading "Recent Expenses" [level=2] [ref=f9e46]
+        - paragraph [ref=f9e47]: Loading…

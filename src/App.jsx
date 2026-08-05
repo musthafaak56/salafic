@@ -1,9 +1,9 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { AuthProvider } from './context/AuthContext'
-import { ProtectedRoute } from './components/RouteGuards'
+import { AdminRoute } from './components/RouteGuards'
 import Login from './pages/Login'
-import Register from './pages/Register'
-import Dashboard from './pages/Dashboard'
+import Home from './pages/Home'
+import AdminDashboard from './pages/admin/AdminDashboard'
 
 function App() {
   return (
@@ -11,13 +11,13 @@ function App() {
       <BrowserRouter>
         <Routes>
           <Route path="/login" element={<Login />} />
-          <Route path="/register" element={<Register />} />
+          <Route path="/" element={<Home />} />
           <Route
-            path="/"
+            path="/admin"
             element={
-              <ProtectedRoute>
-                <Dashboard />
-              </ProtectedRoute>
+              <AdminRoute>
+                <AdminDashboard />
+              </AdminRoute>
             }
           />
           <Route path="*" element={<Navigate to="/" replace />} />

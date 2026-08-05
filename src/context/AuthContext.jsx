@@ -16,28 +16,51 @@ import { doc, getDoc, setDoc } from 'firebase/firestore'
 import { auth, db, googleProvider } from '../lib/firebase'
 
 const MOCK_AUTH = true
+const MOCK_ROLE_KEY = 'salafic-mock-role'
 
 const AuthContext = createContext(null)
 
 const MOCK_USER = {
   uid: 'mock-user',
-  email: 'admin@salafic.dev',
-  displayName: 'Mock Admin',
+  email: (role) => `${role}@salafic.dev`,
+  displayName: (role) => `Mock ${role[0].toUpperCase() + role.slice(1)}`,
 }
 
-const MOCK_PROFILE = {
-  uid: 'mock-user',
-  name: 'Mock Admin',
-  email: 'admin@salafic.dev',
-  role: 'superadmin',
-  masjidIds: [],
-  createdAt: new Date().toISOString(),
+function initialMockRole() {
+  try {
+    return localStorage.getItem(MOCK_ROLE_KEY)
+  } catch {
+    return null
+  }
 }
 
 export function AuthProvider({ children }) {
-  const [user, setUser] = useState(() => (MOCK_AUTH ? MOCK_USER : null))
-  const [profile, setProfile] = useState(() => (MOCK_AUTH ? MOCK_PROFILE : null))
+  const [user, setUser] = useState(() =>
+    MOCK_AUTH && initialMockRole() ? mockUser(initialMockRole()) : null
+  )
+  const [profile, setProfile] = useState(() =>
+    MOCK_AUTH && initialMockRole() ? mockProfile(initialMockRole()) : null
+  )
   const [loading, setLoading] = useState(MOCK_AUTH ? false : true)
+
+  function mockUser(role) {
+    return {
+      uid: 'mock-user',
+      email: MOCK_USER.email(role),
+      displayName: MOCK_USER.displayName(role),
+    }
+  }
+
+  function mockProfile(role) {
+    return {
+      uid: 'mock-user',
+      name: MOCK_USER.displayName(role),
+      email: MOCK_USER.email(role),
+      role,
+      masjidIds: [],
+      createdAt: new Date().toISOString(),
+    }
+  }
 
   useEffect(() => {
     if (MOCK_AUTH) return undefined
@@ -60,10 +83,13 @@ export function AuthProvider({ children }) {
     return unsubscribe
   }, [])
 
-  async function signInMock() {
-    setUser(MOCK_USER)
-    setProfile(MOCK_PROFILE)
-    return MOCK_USER
+  async function signInMock(role = 'user') {
+    try {
+      localStorage.setItem(MOCK_ROLE_KEY, role)
+    } catch {}
+    setUser(mockUser(role))
+    setProfile(mockProfile(role))
+    return mockUser(role)
   }
 
   async function ensureProfile(firebaseUser, extra = {}) {
@@ -85,25 +111,25 @@ export function AuthProvider({ children }) {
     return docSnap.data()
   }
 
-  async function login() {
-    if (MOCK_AUTH) return signInMock()
-    const credential = await signInWithEmailAndPassword(auth, email, password)
+  async function login(role = 'user') {
+    if (MOCK_AUTH) return signInMock(role)
+    const credential = await signInWithEmailAndPassword(auth, role, role)
     const profileData = await ensureProfile(credential.user)
     setProfile(profileData)
     return credential.user
   }
 
-  async function register() {
-    if (MOCK_AUTH) return signInMock()
-    const credential = await createUserWithEmailAndPassword(auth, email, password)
-    await updateProfile(credential.user, { displayName: name })
-    const profileData = await ensureProfile(credential.user, { name })
+  async function register(role = 'user') {
+    if (MOCK_AUTH) return signInMock(role)
+    const credential = await createUserWithEmailAndPassword(auth, role, role)
+    await updateProfile(credential.user, { displayName: role })
+    const profileData = await ensureProfile(credential.user, { name: role })
     setProfile(profileData)
     return credential.user
   }
 
-  async function loginWithGoogle() {
-    if (MOCK_AUTH) return signInMock()
+  async function loginWithGoogle(role = 'user') {
+    if (MOCK_AUTH) return signInMock(role)
     const credential = await signInWithPopup(auth, googleProvider)
     const profileData = await ensureProfile(credential.user, {
       name: credential.user.displayName,
@@ -114,6 +140,9 @@ export function AuthProvider({ children }) {
 
   async function logout() {
     if (MOCK_AUTH) {
+      try {
+        localStorage.removeItem(MOCK_ROLE_KEY)
+      } catch {}
       setUser(null)
       setProfile(null)
       return
