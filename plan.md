@@ -2,7 +2,7 @@
 
 ## Objective
 
-Evolve Salafic into a calm, trustworthy masjid-management experience for visitors and administrators. The public home page should make today’s prayer times and financial transparency effortless to understand; authenticated staff should be able to maintain donations, expenses, and prayer times without friction.
+Evolve Salafic into a calm, trustworthy masjid-management experience for visitors and administrators. The public home page must let anyone view today’s prayer times, donations, and expenses **without creating an account or logging in**; authenticated staff should be able to maintain those records without friction.
 
 The visual direction is **white and blue by default**, with a first-class **dark mode** that keeps the same hierarchy and clarity. The design should feel premium and simple: considered, calm, and institutional—not like a generic finance dashboard.
 
@@ -71,10 +71,11 @@ Typography: use the system sans-serif stack initially; establish a clear type sc
 
 ### 2. Public home (`/`)
 
+- Keep this route fully public: no authentication gate, account prompt, or login requirement for viewing prayer times, donation information, or expense information.
 - Open with a concise welcome block: date, location placeholder/configuration, and a prominent “Next prayer” panel. Derive the next prayer from the existing times only when valid data is present; otherwise show the existing helpful empty state.
 - Present the six daily/Jumuah prayer times in a single responsive timetable. Highlight the next/current prayer using blue, while ensuring the visual distinction is not colour-only.
-- Reframe financial totals as a “Community finances” section with labelled collected, spent, and current balance figures. Keep currency values prominent and use positive/negative colours only on the transaction deltas.
-- Keep recent donations and expenses as separate, equal-weight activity lists with readable dates and sensible truncation for long notes.
+- Reframe the publicly visible donation and expense records as a “Community finances” section with labelled total collected, total spent, and current balance figures. Keep currency values prominent and use positive/negative colours only on the transaction deltas.
+- Display recent donations and expenses as separate, equal-weight public activity lists with readable dates and sensible truncation for long notes. Do not expose donor-identifying information or internal-only notes in this view.
 - Clearly communicate “last updated” information and stale/missing prayer-time data.
 
 ### 3. Authentication (`/login`, `/register`)
@@ -95,7 +96,7 @@ Typography: use the system sans-serif stack initially; establish a clear type sc
 
 1. **Audit and protect behavior**
    - Review existing Firestore helpers, route guards, and admin forms.
-   - Record the currently supported fields and permission assumptions before changing components.
+   - Record the currently supported fields and permission assumptions before changing components, including which prayer-time, donation, and expense fields are safe for unauthenticated read access.
 
 2. **Establish theming**
    - Add the semantic tokens and `data-theme` styles to `src/index.css`.
@@ -123,7 +124,8 @@ Typography: use the system sans-serif stack initially; establish a clear type sc
 
 ## Acceptance criteria
 
-- A visitor can find today’s prayer times, next prayer, current balance, and latest activity on the home page without signing in.
+- A visitor can view today’s prayer times, next prayer, donation totals/activity, expense totals/activity, and current balance on the home page without signing in.
+- Public financial activity excludes personally identifying donor data and internal administration notes; adding, editing, and deleting records still requires an authorized admin account.
 - The default visual language is white, blue, and high contrast; green/red are semantic exceptions, not the primary palette.
 - Theme choice persists, follows OS preference initially, and every screen is legible in both themes.
 - The public site and admin tools share one component language while maintaining different information density.
