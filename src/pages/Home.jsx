@@ -8,16 +8,22 @@ import {
   getExpenses,
   getAllExpenses,
 } from '../lib/firestore'
-import { formatCurrency, formatDate, todayISODate } from '../lib/utils'
-
-const PRAYER_KEYS = [
-  { key: 'fajr', label: 'Fajr' },
-  { key: 'dhuhr', label: 'Dhuhr' },
-  { key: 'asr', label: 'Asr' },
-  { key: 'maghrib', label: 'Maghrib' },
-  { key: 'isha', label: 'Isha' },
-  { key: 'jumuah', label: 'Jumuah' },
-]
+import {
+  PRAYER_KEYS,
+  formatCurrency,
+  formatTime,
+  fullDateLabel,
+  getNextPrayer,
+  isStalePrayerTimes,
+  relativeDayLabel,
+} from '../lib/utils'
+import AppHeader from '../components/AppHeader'
+import PageContainer from '../components/PageContainer'
+import Card from '../components/Card'
+import Stat from '../components/Stat'
+import StatusBadge from '../components/StatusBadge'
+import LoadingState from '../components/LoadingState'
+import EmptyState from '../components/EmptyState'
 
 function useHomeData() {
   const [prayerTimes, setPrayerTimes] = useState(null)
@@ -25,6 +31,7 @@ function useHomeData() {
   const [recentExpenses, setRecentExpenses] = useState([])
   const [totals, setTotals] = useState({ collected: 0, spent: 0 })
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState(null)
 
   useEffect(() => {
     async function load() {
@@ -43,6 +50,8 @@ function useHomeData() {
           collected: allF.reduce((s, f) => s + (Number(f.amount) || 0), 0),
           spent: allE.reduce((s, e) => s + (Number(e.amount) || 0), 0),
         })
+      } catch (err) {
+        setError(err.message)
       } finally {
         setLoading(false)
       }
@@ -50,149 +59,215 @@ function useHomeData() {
     load()
   }, [])
 
-  return { prayerTimes, recentFunds, recentExpenses, totals, loading }
+  return { prayerTimes, recentFunds, recentExpenses, totals, loading, error }
+}
+
+function NextPrayerPanel({ next }) {
+  if (!next) return null
+  return (
+    <Card className="border-primary/40 bg-surface-subtle p-6">
+      <div className="flex flex-wrap items-center justify-between gap-4">
+        <div>
+          <p className="text-sm font-medium text-ink-secondary">Next prayer</p>
+          <p className="mt-1 text-3xl font-semibold tracking-tight text-ink">
+            {next.label}
+          </p>
+          <p className="mt-1 text-sm text-ink-secondary">
+            {next.isToday ? 'Today' : 'Tomorrow'} at{' '}
+            <span className="font-semibold text-ink tabular-nums">{next.time}</span>
+          </p>
+        </div>
+        <StatusBadge tone="primary">Next</StatusBadge>
+      </div>
+    </Card>
+  )
+}
+
+function PrayerTable({ prayerTimes, next, loading }) {
+  if (loading) return <LoadingState rows={1} />
+  if (!prayerTimes) {
+    return (
+      <EmptyState
+        title="No prayer times published yet"
+        description="Times will appear here once an admin publishes today's schedule."
+      />
+    )
+  }
+  return (
+    <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+      {PRAYER_KEYS.map((p) => {
+        const isNext = next?.key === p.key
+        return (
+          <div
+            key={p.key}
+            className={`relative rounded-lg border p-3 ${
+              isNext
+                ? 'border-primary bg-primary-soft'
+                : 'border-line bg-canvas'
+            }`}
+          >
+            <div className="flex items-center justify-between">
+              <p className="text-sm font-medium text-ink-secondary">{p.label}</p>
+              {isNext ? <StatusBadge tone="primary">Next</StatusBadge> : null}
+            </div>
+            <p className="mt-1 text-xl font-semibold tabular-nums text-ink">
+              {prayerTimes[p.key] || '—'}
+            </p>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+function ActivityList({ items, kind, loading }) {
+  if (loading) return <LoadingState rows={4} />
+  if (items.length === 0) {
+    return (
+      <EmptyState
+        title={`No ${kind === 'funds' ? 'donations' : 'expenses'} recorded yet`}
+        description="The latest activity will appear here."
+      />
+    )
+  }
+  return (
+    <ul className="divide-y divide-line">
+      {items.map((item) => (
+        <li key={item.id} className="flex items-start justify-between gap-4 py-3">
+          <div className="min-w-0">
+            <p className="truncate text-sm font-medium text-ink">{item.note}</p>
+            <p className="mt-0.5 text-xs text-ink-secondary">
+              {kind === 'expenses' && item.category ? `${item.category} · ` : ''}
+              {formatTime(item.createdAt) === '—'
+                ? relativeDayLabel(item.date)
+                : formatTime(item.createdAt)}
+            </p>
+          </div>
+          <span
+            className={`shrink-0 text-sm font-semibold tabular-nums ${
+              kind === 'funds' ? 'text-positive' : 'text-negative'
+            }`}
+          >
+            {kind === 'funds' ? '+' : '−'}
+            {formatCurrency(item.amount)}
+          </span>
+        </li>
+      ))}
+    </ul>
+  )
 }
 
 export default function Home() {
-  const { profile, logout } = useAuth()
-  const { prayerTimes, recentFunds, recentExpenses, totals, loading } = useHomeData()
+  const { profile } = useAuth()
+  const { prayerTimes, recentFunds, recentExpenses, totals, loading, error } =
+    useHomeData()
 
-  const times = prayerTimes ?? {}
-  const isToday = prayerTimes?.date === todayISODate()
+  const now = new Date()
+  const next = getNextPrayer(prayerTimes, now)
+  const stale = !loading && prayerTimes ? isStalePrayerTimes(prayerTimes, now) : false
 
   return (
-    <div className="min-h-screen bg-gray-950 text-white">
-      <header className="border-b border-gray-800">
-        <div className="max-w-5xl mx-auto px-4 py-4 flex items-center justify-between">
-          <h1 className="text-xl font-bold">Salafic</h1>
-          {profile ? (
-            <div className="flex items-center gap-4">
-              {profile.role === 'admin' || profile.role === 'superadmin' ? (
-                <Link
-                  to="/admin"
-                  className="text-sm bg-emerald-600 hover:bg-emerald-500 rounded-lg px-3 py-1.5"
-                >
-                  Admin Dashboard
-                </Link>
-              ) : null}
-              <span className="text-sm text-gray-400">
-                {profile.name} · <span className="text-emerald-400">{profile.role}</span>
-              </span>
-              <button onClick={logout} className="text-sm text-gray-400 hover:text-white">
-                Sign out
-              </button>
-            </div>
-          ) : (
-            <Link to="/login" className="text-sm text-gray-400 hover:text-white">
-              Sign in
-            </Link>
-          )}
-        </div>
-      </header>
-
-      <main className="max-w-5xl mx-auto px-4 py-8 space-y-8">
-        <section className="grid gap-6 md:grid-cols-3">
-          <div className="bg-gray-900 border border-gray-800 rounded-xl p-6">
-            <h2 className="text-sm text-gray-400 mb-2">Total Collected</h2>
-            <p className="text-2xl font-bold text-emerald-400">
-              {loading ? '…' : formatCurrency(totals.collected)}
-            </p>
-          </div>
-          <div className="bg-gray-900 border border-gray-800 rounded-xl p-6">
-            <h2 className="text-sm text-gray-400 mb-2">Total Expenses</h2>
-            <p className="text-2xl font-bold text-red-400">
-              {loading ? '…' : formatCurrency(totals.spent)}
-            </p>
-          </div>
-          <div className="bg-gray-900 border border-gray-800 rounded-xl p-6">
-            <h2 className="text-sm text-gray-400 mb-2">Balance</h2>
-            <p className="text-2xl font-bold">
-              {loading ? '…' : formatCurrency(totals.collected - totals.spent)}
-            </p>
-          </div>
+    <div className="min-h-screen bg-canvas text-ink">
+      <AppHeader />
+      <PageContainer className="space-y-10">
+        <section className="max-w-2xl">
+          <p className="text-sm font-medium text-ink-secondary">{fullDateLabel(now)}</p>
+          <h1 className="mt-2 text-3xl font-semibold tracking-tight text-ink sm:text-4xl">
+            Welcome to Salafic Masjid
+          </h1>
+          <p className="mt-3 text-base text-ink-secondary">
+            Prayer times, community funds, and expenses — kept open and transparent.
+          </p>
         </section>
 
-        <section className="bg-gray-900 border border-gray-800 rounded-xl p-6">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-lg font-semibold">Prayer Times</h2>
-            <span className="text-xs text-gray-400">
-              {isToday ? 'Today' : formatDate(prayerTimes?.date)} · Updated {formatDate(times.updatedAt)}
-            </span>
-          </div>
+        {error ? (
+          <p className="rounded-lg border border-negative/30 bg-negative/10 p-4 text-sm text-negative" role="alert">
+            Could not load data. Check your Firebase configuration.
+          </p>
+        ) : null}
+
+        <section aria-label="Next prayer">
           {loading ? (
-            <p className="text-gray-400">Loading…</p>
-          ) : prayerTimes ? (
-            <div className="grid grid-cols-3 md:grid-cols-6 gap-3">
-              {PRAYER_KEYS.map((p) => (
-                <div key={p.key} className="bg-gray-800 rounded-lg p-3 text-center">
-                  <p className="text-xs text-gray-400">{p.label}</p>
-                  <p className="font-semibold">{times[p.key] || '—'}</p>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <p className="text-gray-400">
-              No prayer times added yet. Ask an admin to add today&apos;s times.
+            <LoadingState rows={1} />
+          ) : next ? (
+            <NextPrayerPanel next={next} />
+          ) : null}
+        </section>
+
+        <section aria-labelledby="prayer-heading">
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+            <h2 id="prayer-heading" className="text-xl font-semibold text-ink">
+              Prayer times
+            </h2>
+            {prayerTimes ? (
+              <div className="flex items-center gap-2">
+                <StatusBadge tone={stale ? 'default' : 'positive'}>
+                  {relativeDayLabel(prayerTimes.date)}
+                </StatusBadge>
+                <span className="text-xs text-ink-secondary">
+                  Updated {formatTime(prayerTimes.updatedAt)}
+                </span>
+              </div>
+            ) : null}
+          </div>
+          {stale && prayerTimes ? (
+            <p className="mb-4 rounded-lg border border-line bg-surface-subtle p-3 text-sm text-ink-secondary">
+              These times are for an earlier date. An admin may not have published
+              today&apos;s schedule yet.
             </p>
-          )}
+          ) : null}
+          <PrayerTable prayerTimes={prayerTimes} next={next} loading={loading} />
         </section>
 
-        <section className="grid gap-6 md:grid-cols-2">
-          <div className="bg-gray-900 border border-gray-800 rounded-xl p-6">
-            <h2 className="text-lg font-semibold mb-4">Recent Donations</h2>
-            {loading ? (
-              <p className="text-gray-400">Loading…</p>
-            ) : recentFunds.length === 0 ? (
-              <p className="text-gray-400">No donations yet.</p>
-            ) : (
-              <ul className="space-y-3">
-                {recentFunds.map((f) => (
-                  <li
-                    key={f.id}
-                    className="flex items-center justify-between bg-gray-800 rounded-lg px-4 py-3"
-                  >
-                    <div>
-                      <p className="font-medium">{f.note}</p>
-                      <p className="text-xs text-gray-400">{formatDate(f.createdAt)}</p>
-                    </div>
-                    <span className="font-semibold text-emerald-400">
-                      +{formatCurrency(f.amount)}
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            )}
+        <section aria-labelledby="finance-heading">
+          <div className="mb-4">
+            <h2 id="finance-heading" className="text-xl font-semibold text-ink">
+              Community finances
+            </h2>
+            <p className="mt-1 text-sm text-ink-secondary">
+              Money collected and spent, visible to everyone.
+            </p>
           </div>
-
-          <div className="bg-gray-900 border border-gray-800 rounded-xl p-6">
-            <h2 className="text-lg font-semibold mb-4">Recent Expenses</h2>
-            {loading ? (
-              <p className="text-gray-400">Loading…</p>
-            ) : recentExpenses.length === 0 ? (
-              <p className="text-gray-400">No expenses yet.</p>
-            ) : (
-              <ul className="space-y-3">
-                {recentExpenses.map((e) => (
-                  <li
-                    key={e.id}
-                    className="flex items-center justify-between bg-gray-800 rounded-lg px-4 py-3"
-                  >
-                    <div>
-                      <p className="font-medium">{e.note}</p>
-                      <p className="text-xs text-gray-400">
-                        {e.category || 'General'} · {formatDate(e.createdAt)}
-                      </p>
-                    </div>
-                    <span className="font-semibold text-red-400">
-                      −{formatCurrency(e.amount)}
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
+          <Card className="p-6">
+            <div className="grid gap-6 sm:grid-cols-3">
+              <Stat
+                label="Collected"
+                value={loading ? '…' : formatCurrency(totals.collected)}
+                tone="positive"
+              />
+              <Stat
+                label="Spent"
+                value={loading ? '…' : formatCurrency(totals.spent)}
+                tone="negative"
+              />
+              <Stat
+                label="Current balance"
+                value={loading ? '…' : formatCurrency(totals.collected - totals.spent)}
+              />
+            </div>
+          </Card>
         </section>
-      </main>
+
+        <section className="grid gap-8 lg:grid-cols-2" aria-label="Latest activity">
+          <Card className="p-6">
+            <h3 className="mb-2 text-lg font-semibold text-ink">Recent donations</h3>
+            <ActivityList items={recentFunds} kind="funds" loading={loading} />
+          </Card>
+          <Card className="p-6">
+            <h3 className="mb-2 text-lg font-semibold text-ink">Recent expenses</h3>
+            <ActivityList items={recentExpenses} kind="expenses" loading={loading} />
+          </Card>
+        </section>
+
+        {!profile ? (
+          <p className="text-center text-sm text-ink-secondary">
+            <Link to="/login" className="font-medium text-primary hover:underline">
+              Sign in
+            </Link>{' '}
+            to manage this masjid&apos;s data.
+          </p>
+        ) : null}
+      </PageContainer>
     </div>
   )
 }

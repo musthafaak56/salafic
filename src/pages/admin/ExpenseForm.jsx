@@ -1,6 +1,8 @@
 import { useState } from 'react'
 import { addExpense } from '../../lib/firestore'
 import { useAuth } from '../../context/AuthContext'
+import Button from '../../components/Button'
+import Field, { inputClass } from '../../components/Field'
 
 const CATEGORIES = [
   'General',
@@ -18,13 +20,13 @@ export default function ExpenseForm({ onSaved }) {
   const [note, setNote] = useState('')
   const [amount, setAmount] = useState('')
   const [category, setCategory] = useState('General')
-  const [message, setMessage] = useState('')
+  const [success, setSuccess] = useState(false)
   const [error, setError] = useState('')
   const [saving, setSaving] = useState(false)
 
   async function handleSubmit(e) {
     e.preventDefault()
-    setMessage('')
+    setSuccess(false)
     setError('')
     setSaving(true)
     try {
@@ -38,7 +40,8 @@ export default function ExpenseForm({ onSaved }) {
       })
       setNote('')
       setAmount('')
-      setMessage('Expense recorded')
+      setCategory('General')
+      setSuccess(true)
       onSaved?.()
     } catch (err) {
       setError(err.message)
@@ -48,36 +51,47 @@ export default function ExpenseForm({ onSaved }) {
   }
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-4">
-      <div>
-        <label className="block text-sm text-gray-400 mb-1">Note</label>
+    <form onSubmit={handleSubmit} className="space-y-4" noValidate>
+      <Field
+        label="Note"
+        htmlFor="expense-note"
+        hint="What was this for? e.g. Electricity bill."
+      >
         <input
+          id="expense-note"
           type="text"
           required
+          maxLength={120}
           placeholder="e.g. Electricity bill"
           value={note}
           onChange={(e) => setNote(e.target.value)}
-          className="w-full rounded-lg bg-gray-800 border border-gray-700 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+          className={inputClass}
         />
-      </div>
-      <div className="grid grid-cols-2 gap-3">
-        <div>
-          <label className="block text-sm text-gray-400 mb-1">Amount (₹)</label>
+      </Field>
+      <div className="grid gap-4 sm:grid-cols-2">
+        <Field
+          label="Amount (₹)"
+          htmlFor="expense-amount"
+          hint="Whole number, e.g. 2500."
+        >
           <input
+            id="expense-amount"
             type="number"
             required
             min="1"
+            step="1"
+            placeholder="2500"
             value={amount}
             onChange={(e) => setAmount(e.target.value)}
-            className="w-full rounded-lg bg-gray-800 border border-gray-700 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+            className={inputClass}
           />
-        </div>
-        <div>
-          <label className="block text-sm text-gray-400 mb-1">Category</label>
+        </Field>
+        <Field label="Category" htmlFor="expense-category">
           <select
+            id="expense-category"
             value={category}
             onChange={(e) => setCategory(e.target.value)}
-            className="w-full rounded-lg bg-gray-800 border border-gray-700 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+            className={inputClass}
           >
             {CATEGORIES.map((c) => (
               <option key={c} value={c}>
@@ -85,25 +99,35 @@ export default function ExpenseForm({ onSaved }) {
               </option>
             ))}
           </select>
-        </div>
+        </Field>
       </div>
-      {error && (
-        <p className="text-sm text-red-400 bg-red-500/10 border border-red-500/20 rounded-lg p-3">
+      {error ? (
+        <p className="rounded-lg border border-negative/30 bg-negative/10 p-3 text-sm text-negative" role="alert">
           {error}
         </p>
-      )}
-      {message && (
-        <p className="text-sm text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 rounded-lg p-3">
-          {message}
+      ) : null}
+      {success ? (
+        <p className="rounded-lg border border-positive/30 bg-positive/10 p-3 text-sm text-positive" role="status">
+          Expense recorded.
         </p>
-      )}
-      <button
-        type="submit"
-        disabled={saving}
-        className="rounded-lg bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 px-4 py-2 font-medium"
-      >
-        {saving ? 'Saving…' : 'Record expense'}
-      </button>
+      ) : null}
+      <div className="flex items-center gap-3">
+        <Button type="submit" loading={saving}>
+          {saving ? 'Saving…' : 'Record expense'}
+        </Button>
+        <Button
+          type="button"
+          variant="ghost"
+          onClick={() => {
+            setNote('')
+            setAmount('')
+            setCategory('General')
+            setSuccess(false)
+          }}
+        >
+          Clear
+        </Button>
+      </div>
     </form>
   )
 }

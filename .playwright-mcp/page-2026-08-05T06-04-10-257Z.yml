@@ -1,0 +1,44 @@
+- generic [ref=f13e3]:
+  - banner [ref=f13e4]:
+    - generic [ref=f13e5]:
+      - link "Salafic" [ref=f13e6] [cursor=pointer]:
+        - /url: /
+      - generic [ref=f13e7]:
+        - button "Switch to dark theme" [ref=f13e8]
+        - link "Sign in" [ref=f13e11] [cursor=pointer]:
+          - /url: /login
+  - generic [ref=f13e12]:
+    - generic [ref=f13e13]:
+      - paragraph [ref=f13e14]: Wednesday, 5 August 2026
+      - heading "Welcome to Salafic Masjid" [level=1] [ref=f13e15]
+      - paragraph [ref=f13e16]: Prayer times, community funds, and expenses — kept open and transparent.
+    - region "Next prayer" [ref=f13e17]:
+      - status "Loading…" [ref=f13e18]
+    - region [ref=f13e21]:
+      - heading "Prayer times" [level=2] [ref=f13e23]
+      - status "Loading…" [ref=f13e24]
+    - region [ref=f13e27]:
+      - generic [ref=f13e28]:
+        - heading "Community finances" [level=2] [ref=f13e29]
+        - paragraph [ref=f13e30]: Money collected and spent, visible to everyone.
+      - generic [ref=f13e32]:
+        - generic [ref=f13e33]:
+          - paragraph [ref=f13e34]: Collected
+          - paragraph [ref=f13e35]: …
+        - generic [ref=f13e36]:
+          - paragraph [ref=f13e37]: Spent
+          - paragraph [ref=f13e38]: …
+        - generic [ref=f13e39]:
+          - paragraph [ref=f13e40]: Current balance
+          - paragraph [ref=f13e41]: …
+    - region "Latest activity" [ref=f13e42]:
+      - generic [ref=f13e43]:
+        - heading "Recent donations" [level=3] [ref=f13e44]
+        - status "Loading…" [ref=f13e45]
+      - generic [ref=f13e51]:
+        - heading "Recent expenses" [level=3] [ref=f13e52]
+        - status "Loading…" [ref=f13e53]
+    - paragraph [ref=f13e59]:
+      - link "Sign in" [ref=f13e60] [cursor=pointer]:
+        - /url: /login
+      - text: to manage this masjid's data.

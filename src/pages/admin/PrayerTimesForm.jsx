@@ -1,6 +1,17 @@
 import { useState } from 'react'
 import { addPrayerTimes } from '../../lib/firestore'
 import { todayISODate } from '../../lib/utils'
+import Button from '../../components/Button'
+import Field, { inputClass } from '../../components/Field'
+
+const PRAYER_FIELDS = [
+  { key: 'fajr', label: 'Fajr' },
+  { key: 'dhuhr', label: 'Dhuhr' },
+  { key: 'asr', label: 'Asr' },
+  { key: 'maghrib', label: 'Maghrib' },
+  { key: 'isha', label: 'Isha' },
+  { key: 'jumuah', label: 'Jumuah' },
+]
 
 export default function PrayerTimesForm({ onSaved }) {
   const [date, setDate] = useState(todayISODate())
@@ -12,7 +23,7 @@ export default function PrayerTimesForm({ onSaved }) {
     isha: '',
     jumuah: '',
   })
-  const [message, setMessage] = useState('')
+  const [success, setSuccess] = useState(false)
   const [error, setError] = useState('')
   const [saving, setSaving] = useState(false)
 
@@ -22,12 +33,12 @@ export default function PrayerTimesForm({ onSaved }) {
 
   async function handleSubmit(e) {
     e.preventDefault()
-    setMessage('')
+    setSuccess(false)
     setError('')
     setSaving(true)
     try {
       await addPrayerTimes('main', { date, ...values })
-      setMessage('Prayer times saved')
+      setSuccess(true)
       onSaved?.()
     } catch (err) {
       setError(err.message)
@@ -36,58 +47,49 @@ export default function PrayerTimesForm({ onSaved }) {
     }
   }
 
-  const fields = [
-    { key: 'fajr', label: 'Fajr' },
-    { key: 'dhuhr', label: 'Dhuhr' },
-    { key: 'asr', label: 'Asr' },
-    { key: 'maghrib', label: 'Maghrib' },
-    { key: 'isha', label: 'Isha' },
-    { key: 'jumuah', label: 'Jumuah' },
-  ]
-
   return (
-    <form onSubmit={handleSubmit} className="space-y-4">
-      <div>
-        <label className="block text-sm text-gray-400 mb-1">Date</label>
+    <form onSubmit={handleSubmit} className="space-y-4" noValidate>
+      <Field
+        label="Date"
+        htmlFor="pt-date"
+        hint="Which day do these times apply to?"
+      >
         <input
+          id="pt-date"
           type="date"
           required
           value={date}
           onChange={(e) => setDate(e.target.value)}
-          className="w-full rounded-lg bg-gray-800 border border-gray-700 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+          className={inputClass}
         />
-      </div>
-      <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-        {fields.map((f) => (
-          <div key={f.key}>
-            <label className="block text-sm text-gray-400 mb-1">{f.label}</label>
+      </Field>
+      <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
+        {PRAYER_FIELDS.map((f) => (
+          <Field key={f.key} label={f.label} htmlFor={`pt-${f.key}`}>
             <input
+              id={`pt-${f.key}`}
               type="time"
               required
               value={values[f.key]}
               onChange={(e) => update(f.key, e.target.value)}
-              className="w-full rounded-lg bg-gray-800 border border-gray-700 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+              className={inputClass}
             />
-          </div>
+          </Field>
         ))}
       </div>
-      {error && (
-        <p className="text-sm text-red-400 bg-red-500/10 border border-red-500/20 rounded-lg p-3">
+      {error ? (
+        <p className="rounded-lg border border-negative/30 bg-negative/10 p-3 text-sm text-negative" role="alert">
           {error}
         </p>
-      )}
-      {message && (
-        <p className="text-sm text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 rounded-lg p-3">
-          {message}
+      ) : null}
+      {success ? (
+        <p className="rounded-lg border border-positive/30 bg-positive/10 p-3 text-sm text-positive" role="status">
+          Prayer times saved for {date}.
         </p>
-      )}
-      <button
-        type="submit"
-        disabled={saving}
-        className="rounded-lg bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 px-4 py-2 font-medium"
-      >
+      ) : null}
+      <Button type="submit" loading={saving}>
         {saving ? 'Saving…' : 'Save prayer times'}
-      </button>
+      </Button>
     </form>
   )
 }

@@ -1,0 +1,43 @@
+- generic [ref=f15e3]:
+  - banner [ref=f15e4]:
+    - generic [ref=f15e5]:
+      - link "Salafic" [ref=f15e6] [cursor=pointer]:
+        - /url: /
+      - navigation "Admin" [ref=f15e7]:
+        - link "Overview" [ref=f15e8] [cursor=pointer]:
+          - /url: /admin
+        - link "Donations" [active] [ref=f15e9] [cursor=pointer]:
+          - /url: /admin/donations
+        - link "Expenses" [ref=f15e10] [cursor=pointer]:
+          - /url: /admin/expenses
+        - link "Prayer Times" [ref=f15e11] [cursor=pointer]:
+          - /url: /admin/prayer-times
+      - generic [ref=f15e12]:
+        - button "Switch to dark theme" [ref=f15e13]
+        - link "View site" [ref=f15e16] [cursor=pointer]:
+          - /url: /
+        - generic [ref=f15e17]: superadmin
+        - button "Sign out" [ref=f15e19]
+  - generic [ref=f15e73]:
+    - generic [ref=f15e74]:
+      - heading "Donations" [level=1] [ref=f15e75]
+      - paragraph [ref=f15e76]: Record money received. Everyone can see the totals on the home page.
+    - generic [ref=f15e77]:
+      - generic [ref=f15e78]:
+        - heading "Record a donation" [level=2] [ref=f15e81]
+        - generic [ref=f15e82]:
+          - generic [ref=f15e83]:
+            - generic [ref=f15e84]: Note
+            - textbox "Note" [ref=f15e85]:
+              - /placeholder: e.g. Friday donation box
+            - paragraph [ref=f15e86]: What is this donation for? e.g. Friday donation box.
+          - generic [ref=f15e87]:
+            - generic [ref=f15e88]: Amount (₹)
+            - spinbutton "Amount (₹)" [ref=f15e89]
+            - paragraph [ref=f15e90]: Enter a whole number, e.g. 1500.
+          - generic [ref=f15e91]:
+            - button "Record donation" [ref=f15e92]
+            - button "Clear" [ref=f15e93]
+      - generic [ref=f15e94]:
+        - heading "Recent donations" [level=2] [ref=f15e97]
+        - status "Loading…" [ref=f15e98]

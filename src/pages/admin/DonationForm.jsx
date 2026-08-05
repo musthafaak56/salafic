@@ -1,18 +1,20 @@
 import { useState } from 'react'
 import { addFund } from '../../lib/firestore'
 import { useAuth } from '../../context/AuthContext'
+import Button from '../../components/Button'
+import Field, { inputClass } from '../../components/Field'
 
 export default function DonationForm({ onSaved }) {
   const { profile } = useAuth()
   const [note, setNote] = useState('')
   const [amount, setAmount] = useState('')
-  const [message, setMessage] = useState('')
+  const [success, setSuccess] = useState(false)
   const [error, setError] = useState('')
   const [saving, setSaving] = useState(false)
 
   async function handleSubmit(e) {
     e.preventDefault()
-    setMessage('')
+    setSuccess(false)
     setError('')
     setSaving(true)
     try {
@@ -25,7 +27,7 @@ export default function DonationForm({ onSaved }) {
       })
       setNote('')
       setAmount('')
-      setMessage('Donation recorded')
+      setSuccess(true)
       onSaved?.()
     } catch (err) {
       setError(err.message)
@@ -35,46 +37,66 @@ export default function DonationForm({ onSaved }) {
   }
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-4">
-      <div>
-        <label className="block text-sm text-gray-400 mb-1">Note</label>
+    <form onSubmit={handleSubmit} className="space-y-4" noValidate>
+      <Field
+        label="Note"
+        htmlFor="fund-note"
+        hint="What is this donation for? e.g. Friday donation box."
+      >
         <input
+          id="fund-note"
           type="text"
           required
+          maxLength={120}
           placeholder="e.g. Friday donation box"
           value={note}
           onChange={(e) => setNote(e.target.value)}
-          className="w-full rounded-lg bg-gray-800 border border-gray-700 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+          className={inputClass}
         />
-      </div>
-      <div>
-        <label className="block text-sm text-gray-400 mb-1">Amount (₹)</label>
+      </Field>
+      <Field
+        label="Amount (₹)"
+        htmlFor="fund-amount"
+        hint="Enter a whole number, e.g. 1500."
+      >
         <input
+          id="fund-amount"
           type="number"
           required
           min="1"
+          step="1"
+          placeholder="1500"
           value={amount}
           onChange={(e) => setAmount(e.target.value)}
-          className="w-full rounded-lg bg-gray-800 border border-gray-700 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+          className={inputClass}
         />
-      </div>
-      {error && (
-        <p className="text-sm text-red-400 bg-red-500/10 border border-red-500/20 rounded-lg p-3">
+      </Field>
+      {error ? (
+        <p className="rounded-lg border border-negative/30 bg-negative/10 p-3 text-sm text-negative" role="alert">
           {error}
         </p>
-      )}
-      {message && (
-        <p className="text-sm text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 rounded-lg p-3">
-          {message}
+      ) : null}
+      {success ? (
+        <p className="rounded-lg border border-positive/30 bg-positive/10 p-3 text-sm text-positive" role="status">
+          Donation recorded.
         </p>
-      )}
-      <button
-        type="submit"
-        disabled={saving}
-        className="rounded-lg bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 px-4 py-2 font-medium"
-      >
-        {saving ? 'Saving…' : 'Record donation'}
-      </button>
+      ) : null}
+      <div className="flex items-center gap-3">
+        <Button type="submit" loading={saving}>
+          {saving ? 'Saving…' : 'Record donation'}
+        </Button>
+        <Button
+          type="button"
+          variant="ghost"
+          onClick={() => {
+            setNote('')
+            setAmount('')
+            setSuccess(false)
+          }}
+        >
+          Clear
+        </Button>
+      </div>
     </form>
   )
 }

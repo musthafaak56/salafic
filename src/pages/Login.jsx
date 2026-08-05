@@ -1,10 +1,24 @@
-import { useNavigate } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
+import AuthLayout from '../components/AuthLayout'
+import Button from '../components/Button'
 
 const ROLES = [
-  { key: 'superadmin', label: 'Super Admin', desc: 'Full platform control' },
-  { key: 'admin', label: 'Admin', desc: 'Manage masjid data' },
-  { key: 'user', label: 'User', desc: 'View transparency' },
+  {
+    key: 'superadmin',
+    label: 'Super admin',
+    desc: 'Full platform control',
+  },
+  {
+    key: 'admin',
+    label: 'Admin',
+    desc: 'Manage masjid data',
+  },
+  {
+    key: 'user',
+    label: 'User',
+    desc: 'View transparency',
+  },
 ]
 
 export default function Login() {
@@ -17,24 +31,39 @@ export default function Login() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-950 p-4">
-      <div className="w-full max-w-md">
-        <h1 className="text-3xl font-bold text-white mb-8 text-center">Salafic</h1>
-        <div className="bg-gray-900 border border-gray-800 rounded-xl p-8 space-y-3">
-          <h2 className="text-xl font-semibold text-white mb-4">Sign in as</h2>
-          {ROLES.map((role) => (
-            <button
-              key={role.key}
-              type="button"
-              onClick={() => handleLogin(role.key)}
-              className="w-full rounded-lg bg-gray-800 hover:bg-emerald-600 border border-gray-700 px-4 py-3 text-white text-left transition-colors"
-            >
-              <span className="block font-medium">{role.label}</span>
-              <span className="block text-sm text-gray-400">{role.desc}</span>
-            </button>
-          ))}
-        </div>
+    <AuthLayout
+      title="Sign in"
+      subtitle="Choose the role you want to explore."
+      footer={
+        <>
+          Need an account?{' '}
+          <Link to="/register" className="font-medium text-primary hover:underline">
+            Create one
+          </Link>
+        </>
+      }
+    >
+      <div className="space-y-3">
+        {ROLES.map((role) => (
+          <button
+            key={role.key}
+            type="button"
+            onClick={() => handleLogin(role.key)}
+            className="flex w-full items-center justify-between gap-3 rounded-lg border border-line bg-surface px-4 py-3 text-left transition-colors hover:border-primary hover:bg-surface-subtle focus-visible:outline-2 focus-visible:outline-primary"
+          >
+            <span>
+              <span className="block text-sm font-medium text-ink">{role.label}</span>
+              <span className="block text-xs text-ink-secondary">{role.desc}</span>
+            </span>
+            <span className="text-ink-secondary" aria-hidden="true">
+              →
+            </span>
+          </button>
+        ))}
+        <Button variant="ghost" size="sm" className="w-full" onClick={() => navigate('/')}>
+          Continue as visitor
+        </Button>
       </div>
-    </div>
+    </AuthLayout>
   )
 }

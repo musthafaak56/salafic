@@ -1,0 +1,30 @@
+- generic [ref=f14e3]:
+  - banner [ref=f14e4]:
+    - link "Salafic" [ref=f14e5] [cursor=pointer]:
+      - /url: /
+    - button "Switch to light theme" [ref=f14e6]
+  - main [ref=f14e10]:
+    - generic [ref=f14e11]:
+      - heading "Sign in" [level=1] [ref=f14e12]
+      - paragraph [ref=f14e13]: Choose the role you want to explore.
+      - generic [ref=f14e15]:
+        - button "Super admin Full platform control" [ref=f14e16]:
+          - generic [ref=f14e17]:
+            - generic [ref=f14e18]: Super admin
+            - generic [ref=f14e19]: Full platform control
+          - generic [ref=f14e20]: →
+        - button "Admin Manage masjid data" [ref=f14e21]:
+          - generic [ref=f14e22]:
+            - generic [ref=f14e23]: Admin
+            - generic [ref=f14e24]: Manage masjid data
+          - generic [ref=f14e25]: →
+        - button "User View transparency" [ref=f14e26]:
+          - generic [ref=f14e27]:
+            - generic [ref=f14e28]: User
+            - generic [ref=f14e29]: View transparency
+          - generic [ref=f14e30]: →
+        - button "Continue as visitor" [ref=f14e31]
+      - paragraph [ref=f14e32]:
+        - text: Need an account?
+        - link "Create one" [ref=f14e33] [cursor=pointer]:
+          - /url: /register
