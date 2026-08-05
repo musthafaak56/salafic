@@ -5,6 +5,7 @@ import {
   formatTime,
   getNextPrayer,
   isStalePrayerTimes,
+  prayerEntry,
   relativeDayLabel,
 } from '../../lib/utils'
 import Card from '../../components/Card'
@@ -70,18 +71,32 @@ export default function PrayerTimes() {
                 <span className="font-semibold tabular-nums">{next.time}</span>
               </p>
             ) : null}
-            <div className="flex flex-wrap gap-2">
-              {PRAYER_KEYS.map((p) => (
-                <span
-                  key={p.key}
-                  className="rounded-lg border border-line bg-canvas px-3 py-1.5 text-sm"
-                >
-                  <span className="text-ink-secondary">{p.label}</span>{' '}
-                  <span className="font-semibold tabular-nums text-ink">
-                    {current[p.key] || '—'}
-                  </span>
-                </span>
-              ))}
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              {PRAYER_KEYS.map((p) => {
+                const { adhaan, iqama } = prayerEntry(current[p.key])
+                return (
+                  <div
+                    key={p.key}
+                    className="rounded-lg border border-line bg-canvas px-4 py-3"
+                  >
+                    <p className="text-sm font-semibold text-ink">{p.label}</p>
+                    <dl className="mt-1 grid grid-cols-2 gap-2 text-sm">
+                      <div>
+                        <dt className="text-xs text-ink-secondary">Adhaan</dt>
+                        <dd className="font-semibold tabular-nums text-ink">
+                          {adhaan || '—'}
+                        </dd>
+                      </div>
+                      <div>
+                        <dt className="text-xs text-ink-secondary">Iqama</dt>
+                        <dd className="font-semibold tabular-nums text-ink">
+                          {iqama || '—'}
+                        </dd>
+                      </div>
+                    </dl>
+                  </div>
+                )
+              })}
             </div>
           </div>
         ) : (

@@ -15,6 +15,7 @@ import {
   fullDateLabel,
   getNextPrayer,
   isStalePrayerTimes,
+  prayerEntry,
   relativeDayLabel,
 } from '../lib/utils'
 import AppHeader from '../components/AppHeader'
@@ -97,6 +98,7 @@ function PrayerTable({ prayerTimes, next, loading }) {
     <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
       {PRAYER_KEYS.map((p) => {
         const isNext = next?.key === p.key
+        const { adhaan, iqama } = prayerEntry(prayerTimes[p.key])
         return (
           <div
             key={p.key}
@@ -110,9 +112,20 @@ function PrayerTable({ prayerTimes, next, loading }) {
               <p className="text-sm font-medium text-ink-secondary">{p.label}</p>
               {isNext ? <StatusBadge tone="primary">Next</StatusBadge> : null}
             </div>
-            <p className="mt-1 text-xl font-semibold tabular-nums text-ink">
-              {prayerTimes[p.key] || '—'}
-            </p>
+            <div className="mt-2 space-y-1.5">
+              <p className="flex items-baseline justify-between gap-1 text-sm">
+                <span className="text-xs text-ink-secondary">Adhaan</span>
+                <span className="font-semibold tabular-nums text-ink">
+                  {adhaan || '—'}
+                </span>
+              </p>
+              <p className="flex items-baseline justify-between gap-1 text-sm">
+                <span className="text-xs text-ink-secondary">Iqama</span>
+                <span className="font-semibold tabular-nums text-ink">
+                  {iqama || '—'}
+                </span>
+              </p>
+            </div>
           </div>
         )
       })}

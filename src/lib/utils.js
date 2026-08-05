@@ -43,22 +43,46 @@ export function fullDateLabel(date = new Date()) {
   })
 }
 
+/* ---------- Prayer time model ---------- */
+
+// Normalizes a stored prayer entry (new object or legacy string)
+// into { adhaan, iqama }.
+export function prayerEntry(value) {
+  if (!value) return { adhaan: '', iqama: '' }
+  if (typeof value === 'string') return { adhaan: value, iqama: '' }
+  return {
+    adhaan: value.adhaan || '',
+    iqama: value.iqama || '',
+  }
+}
+
 function toMinutes(hhmm) {
   const [h, m] = String(hhmm ?? '').split(':').map(Number)
   if (Number.isNaN(h) || Number.isNaN(m)) return null
   return h * 60 + m
 }
 
+// The next prayer is computed from the iqama time (when the
+// congregation actually starts), falling back to adhaan.
 export function getNextPrayer(prayerTimes, now = new Date()) {
   if (!prayerTimes) return null
   const nowMin = now.getHours() * 60 + now.getMinutes()
   const candidates = []
   for (const { key, label } of PRAYER_KEYS) {
-    const value = prayerTimes[key]
-    if (!value) continue
-    const t = toMinutes(value)
+    const { adhaan, iqama } = prayerEntry(prayerTimes[key])
+    const time = iqama || adhaan
+    if (!time) continue
+    const t = toMinutes(time)
     if (t === null) continue
-    candidates.push({ key, label, time: value, minutes: t, isToday: true })
+    candidates.push({
+      key,
+      label,
+      adhaan,
+      iqama,
+      time,
+      minutes: t,
+      isToday: true,
+    })
   }
   if (candidates.length === 0) return null
 

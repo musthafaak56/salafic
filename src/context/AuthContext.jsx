@@ -6,6 +6,7 @@ import {
 } from 'react'
 import {
   onAuthStateChanged,
+  signInAnonymously,
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
   signInWithPopup,
@@ -35,48 +36,60 @@ function initialMockRole() {
 }
 
 export function AuthProvider({ children }) {
-  const [user, setUser] = useState(() =>
-    MOCK_AUTH && initialMockRole() ? mockUser(initialMockRole()) : null
-  )
-  const [profile, setProfile] = useState(() =>
-    MOCK_AUTH && initialMockRole() ? mockProfile(initialMockRole()) : null
-  )
-  const [loading, setLoading] = useState(MOCK_AUTH ? false : true)
+  const [user, setUser] = useState(null)
+  const [profile, setProfile] = useState(null)
+  const [loading, setLoading] = useState(true)
 
-  function mockUser(role) {
+  function mockUser(role, uid) {
     return {
-      uid: 'mock-user',
+      uid,
       email: MOCK_USER.email(role),
       displayName: MOCK_USER.displayName(role),
     }
   }
 
-  function mockProfile(role) {
+  function mockProfile(role, uid) {
     return {
-      uid: 'mock-user',
+      uid,
       name: MOCK_USER.displayName(role),
       email: MOCK_USER.email(role),
       role,
-      masjidIds: [],
+      masjidIds: role === 'user' ? [] : ['main'],
       createdAt: new Date().toISOString(),
     }
   }
 
-  useEffect(() => {
-    if (MOCK_AUTH) return undefined
+  async function syncMockProfile(profileData) {
+    try {
+      await setDoc(doc(db, 'users', profileData.uid), profileData)
+    } catch {
+      // Firestore may be unreachable in mock mode; auth still works.
+    }
+  }
 
+  useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
-      setUser(firebaseUser)
       if (firebaseUser) {
+        const savedRole = initialMockRole() || 'user'
         try {
           const docRef = doc(db, 'users', firebaseUser.uid)
           const docSnap = await getDoc(docRef)
-          setProfile(docSnap.exists() ? docSnap.data() : { role: 'user' })
+          if (docSnap.exists()) {
+            setProfile(docSnap.data())
+            setUser(mockUser(docSnap.data().role || savedRole, firebaseUser.uid))
+          } else {
+            const data = mockProfile(savedRole, firebaseUser.uid)
+            setProfile(data)
+            setUser(mockUser(savedRole, firebaseUser.uid))
+            await syncMockProfile(data)
+          }
         } catch {
-          setProfile({ role: 'user' })
+          setProfile({ role: savedRole })
+          setUser(mockUser(savedRole, firebaseUser.uid))
         }
       } else {
         setProfile(null)
+        setUser(null)
       }
       setLoading(false)
     })
@@ -87,9 +100,19 @@ export function AuthProvider({ children }) {
     try {
       localStorage.setItem(MOCK_ROLE_KEY, role)
     } catch {}
-    setUser(mockUser(role))
-    setProfile(mockProfile(role))
-    return mockUser(role)
+    let credential = null
+    try {
+      credential = await signInAnonymously(auth)
+    } catch {
+      // Fall back to session-only mock if anonymous auth is unavailable.
+    }
+    const uid = credential?.user?.uid || MOCK_USER.uid
+    const sessionUser = mockUser(role, uid)
+    const profileData = mockProfile(role, uid)
+    setUser(sessionUser)
+    setProfile(profileData)
+    await syncMockProfile(profileData)
+    return sessionUser
   }
 
   async function ensureProfile(firebaseUser, extra = {}) {
@@ -143,12 +166,12 @@ export function AuthProvider({ children }) {
       try {
         localStorage.removeItem(MOCK_ROLE_KEY)
       } catch {}
-      setUser(null)
-      setProfile(null)
-      return
     }
-    await signOut(auth)
+    try {
+      await signOut(auth)
+    } catch {}
     setProfile(null)
+    setUser(null)
   }
 
   const value = {
