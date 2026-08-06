@@ -69,7 +69,7 @@ export function prayerEntry(value) {
   }
 }
 
-function toMinutes(hhmm) {
+export function toMinutes(hhmm) {
   const [h, m] = String(hhmm ?? '').split(':').map(Number)
   if (!Number.isFinite(h) || !Number.isFinite(m)) return null
   return h * 60 + m
@@ -85,13 +85,13 @@ export function minutesBetween(earlier, later) {
   return diff
 }
 
-// Adds minutes to an HH:mm string (handles rollover).
+// Adds (or subtracts) minutes to an HH:mm string (handles rollover both ways).
 export function addMinutes(hhmm, mins) {
   const a = toMinutes(hhmm)
   if (a === null || !Number.isFinite(mins)) return hhmm
   const total = a + mins
-  const h = Math.floor(total / 60) % 24
-  const m = total % 60
+  const h = (((Math.floor(total / 60)) % 24) + 24) % 24
+  const m = ((total % 60) + 60) % 60
   return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`
 }
 
@@ -114,6 +114,27 @@ export function format12h(hhmm) {
     minute: '2-digit',
     hour12: true,
   })
+}
+
+// Seconds from `now` until an "HH:mm" time (optionally on tomorrow's date).
+// Returns null when the time can't be parsed.
+export function secondsUntil(hhmm, isTomorrow = false, now = new Date()) {
+  if (!hhmm) return null
+  const [h, m] = String(hhmm).split(':').map(Number)
+  if (!Number.isFinite(h) || !Number.isFinite(m)) return null
+  const target = new Date(now)
+  target.setHours(h, m, 0, 0)
+  if (isTomorrow) target.setDate(target.getDate() + 1)
+  return Math.max(0, Math.floor((target.getTime() - now.getTime()) / 1000))
+}
+
+// Formats a number of seconds as "hh:mm:ss".
+export function formatHMS(totalSeconds) {
+  const s = Math.max(0, Math.floor(Number(totalSeconds) || 0))
+  const hh = String(Math.floor(s / 3600)).padStart(2, '0')
+  const mm = String(Math.floor((s % 3600) / 60)).padStart(2, '0')
+  const ss = String(s % 60).padStart(2, '0')
+  return `${hh}:${mm}:${ss}`
 }
 
 // The next prayer is computed from the iqama time (when the
