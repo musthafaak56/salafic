@@ -120,8 +120,9 @@ export default function PrayerTimes() {
       <Card className="p-6">
         <SectionHeading title="Publish times" />
         <PrayerTimesForm
+          key={current ? `current-${current.date}` : 'none'}
           onSaved={loadData}
-          defaultGap={current?.iqamaGapMinutes ?? 10}
+          initialValues={current}
         />
       </Card>
     </div>
