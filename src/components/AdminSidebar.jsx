@@ -61,11 +61,11 @@ const icons = {
   ),
 }
 
-const adminNav = [
-  { to: '/admin', label: 'Overview', end: true, icon: icons.overview },
-  { to: '/admin/donations', label: 'Donations', end: false, icon: icons.donations },
-  { to: '/admin/expenses', label: 'Expenses', end: false, icon: icons.expenses },
-  { to: '/admin/prayer-times', label: 'Prayer Times', end: false, icon: icons.prayer },
+const adminNav = (base) => [
+  { to: `${base}`, label: 'Overview', end: true, icon: icons.overview },
+  { to: `${base}/donations`, label: 'Donations', end: false, icon: icons.donations },
+  { to: `${base}/expenses`, label: 'Expenses', end: false, icon: icons.expenses },
+  { to: `${base}/prayer-times`, label: 'Prayer Times', end: false, icon: icons.prayer },
 ]
 
 export default function AdminSidebar({
@@ -77,6 +77,7 @@ export default function AdminSidebar({
 }) {
   const { profile, logout } = useAuth()
   const navigate = useNavigate()
+  const base = profile?.role === 'superadmin' ? '/superadmin' : '/admin'
 
   async function handleLogout() {
     await logout()
@@ -101,7 +102,7 @@ export default function AdminSidebar({
       </Link>
 
       <nav className="flex-1 space-y-1 overflow-y-auto p-3" aria-label="Admin">
-        {adminNav.map((item) => (
+        {adminNav(base).map((item) => (
           <NavLink
             key={item.to}
             to={item.to}

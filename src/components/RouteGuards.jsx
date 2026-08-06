@@ -39,3 +39,22 @@ export function AdminRoute({ children }) {
 
   return children
 }
+
+export function SuperAdminRoute({ children }) {
+  const { user, profile, loading } = useAuth()
+  const location = useLocation()
+
+  if (loading) {
+    return <AdminLayoutLoading />
+  }
+
+  if (!user) {
+    return <Navigate to="/login" state={{ from: location }} replace />
+  }
+
+  if (profile?.role !== 'superadmin') {
+    return <Navigate to="/admin" replace />
+  }
+
+  return children
+}

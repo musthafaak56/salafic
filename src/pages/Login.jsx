@@ -21,13 +21,19 @@ const ROLES = [
   },
 ]
 
+const ROLE_PATHS = {
+  superadmin: '/superadmin',
+  admin: '/admin',
+  user: '/',
+}
+
 export default function Login() {
   const { login } = useAuth()
   const navigate = useNavigate()
 
   async function handleLogin(role) {
     await login(role)
-    navigate('/', { replace: true })
+    navigate(ROLE_PATHS[role] || '/', { replace: true })
   }
 
   return (

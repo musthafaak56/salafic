@@ -4,11 +4,11 @@ import ThemeToggle from './ThemeToggle'
 import StatusBadge from './StatusBadge'
 import Button from './Button'
 
-const adminNav = [
-  { to: '/admin', label: 'Overview', end: true },
-  { to: '/admin/donations', label: 'Donations' },
-  { to: '/admin/expenses', label: 'Expenses' },
-  { to: '/admin/prayer-times', label: 'Prayer Times' },
+const adminNav = (base) => [
+  { to: `${base}`, label: 'Overview', end: true },
+  { to: `${base}/donations`, label: 'Donations' },
+  { to: `${base}/expenses`, label: 'Expenses' },
+  { to: `${base}/prayer-times`, label: 'Prayer Times' },
 ]
 
 const menuIconProps = {
@@ -32,6 +32,7 @@ export default function AppHeader({ area = 'public', onMenuClick, menuOpen }) {
 
   const showAdmin = profile?.role === 'admin' || profile?.role === 'superadmin'
   const isAdminArea = area === 'admin'
+  const adminBase = profile?.role === 'superadmin' ? '/superadmin' : '/admin'
 
   return (
     <header className="sticky top-0 z-10 border-b border-line bg-canvas/95 backdrop-blur-sm">
@@ -61,7 +62,7 @@ export default function AppHeader({ area = 'public', onMenuClick, menuOpen }) {
 
         {!isAdminArea && showAdmin ? (
           <nav className="hidden items-center gap-1 md:flex" aria-label="Admin">
-            {adminNav.map((item) => (
+            {adminNav(adminBase).map((item) => (
               <NavLink
                 key={item.to}
                 to={item.to}
@@ -96,7 +97,7 @@ export default function AppHeader({ area = 'public', onMenuClick, menuOpen }) {
             <>
               {!isAdminArea && showAdmin ? (
                 <Link
-                  to="/admin"
+                  to={adminBase}
                   className="hidden h-11 items-center rounded-lg bg-primary px-4 text-sm font-medium text-white transition-colors duration-200 hover:bg-primary-hover sm:flex"
                 >
                   Admin dashboard
