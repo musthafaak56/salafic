@@ -28,3 +28,9 @@ dist-ssr
 
 # Playwright MCP artifacts
 .playwright-mcp/
+
+# Agent skills caches (local tooling, not project code)
+.agents/
+.claude/
+skills-lock.json
+.firebase/
