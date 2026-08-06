@@ -13,12 +13,14 @@ import {
   format12h,
   formatCurrency,
   formatDateTime,
+  formatHMS,
   fullDateLabel,
   getNextPrayer,
   iqamaGapLabel,
   isStalePrayerTimes,
   prayerEntry,
   relativeDayLabel,
+  secondsUntil,
 } from '../lib/utils'
 import AppHeader from '../components/AppHeader'
 import PageContainer from '../components/PageContainer'
@@ -65,31 +67,59 @@ function useHomeData() {
   return { prayerTimes, recentFunds, recentExpenses, totals, loading, error }
 }
 
-function NextPrayerPanel({ next }) {
+function useNow(intervalMs = 1000) {
+  const [now, setNow] = useState(() => new Date())
+  useEffect(() => {
+    const id = setInterval(() => setNow(new Date()), intervalMs)
+    return () => clearInterval(id)
+  }, [intervalMs])
+  return now
+}
+
+function NextPrayerPanel({ prayerTimes }) {
+  const now = useNow()
+  const next = getNextPrayer(prayerTimes, now)
   if (!next) return null
   const usesIqama = Boolean(next.iqama)
+  const toAdhaan = secondsUntil(next.adhaan, !next.isToday, now)
+  const toIqama = secondsUntil(next.iqama, !next.isToday, now)
+  const phase =
+    usesIqama && (toAdhaan === null || toAdhaan === 0) ? 'iqama' : 'adhaan'
+  const remaining = phase === 'adhaan' ? toAdhaan : toIqama
+  const targetTime = phase === 'adhaan' ? next.adhaan : next.iqama
   return (
     <Card className="border-primary/40 bg-surface-subtle p-6">
-      <div className="flex flex-wrap items-center justify-between gap-4">
+      <div className="flex flex-wrap items-center justify-between gap-6">
         <div>
           <p className="text-sm font-medium text-ink-secondary">Next prayer</p>
           <p className="mt-1 text-5xl font-semibold tracking-tight text-ink tabular-nums sm:text-6xl">
-            {format12h(next.time)}
+            {format12h(targetTime)}
           </p>
           <p className="mt-1 text-sm text-ink-secondary">
-            {next.label} {usesIqama ? 'iqama' : 'adhaan'} ·{' '}
+            {next.label} {phase === 'adhaan' ? 'adhaan' : 'iqama'} ·{' '}
             {next.isToday ? 'Today' : 'Tomorrow'}
           </p>
-          {usesIqama && next.adhaan ? (
+          {usesIqama ? (
             <p className="mt-0.5 text-xs text-ink-secondary">
-              Adhaan at{' '}
+              {phase === 'adhaan' ? 'Iqama' : 'Adhaan'} at{' '}
               <span className="font-medium tabular-nums">
-                {format12h(next.adhaan)}
+                {format12h(phase === 'adhaan' ? next.iqama : next.adhaan)}
               </span>
             </p>
           ) : null}
         </div>
-        <StatusBadge tone="primary">Next</StatusBadge>
+        <div className="text-left sm:text-right">
+          <p
+            className="text-5xl font-semibold tracking-tight text-negative tabular-nums sm:text-6xl"
+            role="timer"
+            aria-live="off"
+          >
+            -{formatHMS(remaining ?? 0)}
+          </p>
+          <p className="mt-1 text-sm text-ink-secondary">
+            {phase === 'adhaan' ? 'Adhaan' : 'Iqama'} remaining
+          </p>
+        </div>
       </div>
     </Card>
   )
@@ -219,8 +249,8 @@ export default function Home() {
         <section aria-label="Next prayer">
           {loading ? (
             <LoadingState rows={1} />
-          ) : next ? (
-            <NextPrayerPanel next={next} />
+          ) : prayerTimes ? (
+            <NextPrayerPanel prayerTimes={prayerTimes} />
           ) : null}
         </section>
 
