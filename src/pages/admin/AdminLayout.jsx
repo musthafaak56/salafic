@@ -82,10 +82,12 @@ export default function AdminLayout() {
       <div
         className={`transition-[padding] duration-200 ${collapsed ? 'md:pl-16' : 'md:pl-64'}`}
       >
-        <AppHeader area="admin" onMenuClick={() => setMenuOpen(true)} menuOpen={menuOpen} />
-        <PageContainer>
-          <Outlet />
-        </PageContainer>
+        <div className="pt-20">
+          <AppHeader area="admin" onMenuClick={() => setMenuOpen(true)} menuOpen={menuOpen} />
+          <PageContainer>
+            <Outlet />
+          </PageContainer>
+        </div>
       </div>
     </div>
   )

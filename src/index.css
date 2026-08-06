@@ -2,31 +2,39 @@
 
 :root,
 [data-theme="light"] {
-  --t-canvas: #f7faff;
+  --t-canvas: #f6f1e7;
   --t-surface: #ffffff;
-  --t-surface-subtle: #eef5ff;
-  --t-primary: #2563eb;
-  --t-primary-hover: #1d4ed8;
-  --t-primary-soft: rgba(37, 99, 235, 0.1);
-  --t-ink: #0f172a;
-  --t-ink-secondary: #52627a;
-  --t-line: #d9e4f3;
-  --t-positive: #15803d;
-  --t-negative: #b91c1c;
+  --t-surface-subtle: #efe8d8;
+  --t-primary: #0e5c3a;
+  --t-primary-hover: #0a462c;
+  --t-primary-soft: rgba(14, 92, 58, 0.1);
+  --t-ink: #10231b;
+  --t-ink-secondary: #5b6b61;
+  --t-line: #ddd3bd;
+  --t-positive: #1e7a44;
+  --t-negative: #b3362a;
+  --t-gold: #b98a2f;
+  --t-gold-soft: rgba(185, 138, 47, 0.14);
+  --t-cream: #fbf7ee;
+  --t-deep: #071812;
 }
 
 [data-theme="dark"] {
-  --t-canvas: #0b1220;
-  --t-surface: #121c2e;
-  --t-surface-subtle: #19263b;
-  --t-primary: #60a5fa;
-  --t-primary-hover: #93c5fd;
-  --t-primary-soft: rgba(96, 165, 250, 0.14);
-  --t-ink: #f8fafc;
-  --t-ink-secondary: #a8b4c7;
-  --t-line: #2b3a51;
-  --t-positive: #4ade80;
-  --t-negative: #f87171;
+  --t-canvas: #071812;
+  --t-surface: #0d241b;
+  --t-surface-subtle: #123324;
+  --t-primary: #c9a24b;
+  --t-primary-hover: #d8b468;
+  --t-primary-soft: rgba(201, 162, 75, 0.14);
+  --t-ink: #f3ecd9;
+  --t-ink-secondary: #a3b5a9;
+  --t-line: #1d4635;
+  --t-positive: #5fce8b;
+  --t-negative: #f28b7e;
+  --t-gold: #d8b468;
+  --t-gold-soft: rgba(216, 180, 104, 0.16);
+  --t-cream: #102a1f;
+  --t-deep: #030f0a;
 }
 
 @theme inline {
@@ -41,11 +49,17 @@
   --color-line: var(--t-line);
   --color-positive: var(--t-positive);
   --color-negative: var(--t-negative);
+  --color-gold: var(--t-gold);
+  --color-gold-soft: var(--t-gold-soft);
+  --color-cream: var(--t-cream);
+  --color-deep: var(--t-deep);
+  --font-sans: "Satoshi", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Cabinet Grotesk", "Satoshi", ui-sans-serif, system-ui,
+    sans-serif;
 }
 
 html {
-  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue',
-    Arial, sans-serif;
+  font-family: var(--font-sans);
   color-scheme: light;
 }
 
@@ -86,6 +100,19 @@ body {
 
 .animate-slide-in-left {
   animation: slide-in-left 220ms ease-out;
+}
+
+@keyframes marquee-x {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(-50%);
+  }
+}
+
+.animate-marquee {
+  animation: marquee-x 38s linear infinite;
 }
 
 @media (prefers-reduced-motion: reduce) {
