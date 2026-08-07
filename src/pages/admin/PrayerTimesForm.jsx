@@ -43,7 +43,7 @@ function toOffset(value) {
 export default function PrayerTimesForm({ onSaved, initialValues }) {
   const current = initialValues ?? {}
   const defaultGap = toGap(current.iqamaGapMinutes, 10)
-  const [date, setDate] = useState(current.date || todayISODate())
+  const [date, setDate] = useState(todayISODate())
   const [values, setValues] = useState(() =>
     Object.fromEntries(
       PRAYER_KEYS.map((p) => {
