@@ -13,6 +13,19 @@ export function isFriday(dateStr) {
   return !Number.isNaN(d.getTime()) && d.getDay() === 5
 }
 
+export const FRIDAY_SUNNAHS = [
+  'Ghusl before the prayer',
+  'Wear your best clothes',
+  'Perfume and siwak',
+  'Recite Surah Al-Kahf',
+  'Salawat upon the Prophet',
+  'Come to the masjid early',
+  'Listen to the khutbah',
+  'Seek the answered hour',
+  'Walk to the masjid',
+  'Increase du’a and dhikr',
+]
+
 // The prayer cards to show for a given schedule date: on Fridays the
 // Friday prayer ("Jumuah") replaces Dhuhr in the same slot; on other
 // days Jumuah is not shown.

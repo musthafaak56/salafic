@@ -20,12 +20,14 @@ import {
 } from '../lib/firestore'
 import {
   PRAYER_KEYS,
+  FRIDAY_SUNNAHS,
   format12h,
   formatCurrency,
   formatDateTime,
   formatHMS,
   getNextPrayer,
   iqamaGapLabel,
+  isFriday,
   isStalePrayerTimes,
   prayerEntry,
   prayerKeysForDate,
@@ -136,7 +138,11 @@ function CountdownPanel({ prayerTimes }) {
 }
 
 function MarqueeRow() {
-  const items = [...PRAYER_KEYS.filter((p) => p.key !== 'jumuah'), ...PRAYER_KEYS.filter((p) => p.key !== 'jumuah')]
+  const friday = isFriday(new Date().toISOString().slice(0, 10))
+  const source = friday
+    ? FRIDAY_SUNNAHS.map((label) => ({ key: label, label }))
+    : PRAYER_KEYS.filter((p) => p.key !== 'jumuah')
+  const items = [...source, ...source]
   return (
     <div className="overflow-hidden border-y border-line/70 bg-cream/60 py-5" aria-hidden="true">
       <div className="animate-marquee flex w-max items-center gap-10 whitespace-nowrap">
