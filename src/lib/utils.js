@@ -199,6 +199,28 @@ export function getNextPrayer(prayerTimes, now = new Date()) {
   return { ...earliest, isToday: false }
 }
 
+// The most recent prayer whose time (iqama, falling back to adhaan) has
+// already passed today, but less than an hour ago. Returns null after
+// that window (or nothing passed yet) so callers can fall back to the
+// regular next-prayer countdown.
+export function recentlyPassedPrayer(prayerTimes, now = new Date()) {
+  if (!prayerTimes) return null
+  const nowMin = now.getHours() * 60 + now.getMinutes()
+  const passed = []
+  for (const { key, label } of prayerKeysForDate(prayerTimes.date)) {
+    const { adhaan, iqama } = prayerEntry(prayerTimes[key])
+    const time = iqama || adhaan
+    const t = toMinutes(time)
+    if (t === null || t > nowMin) continue
+    passed.push({ key, label, adhaan, iqama, time, minutes: t })
+  }
+  if (passed.length === 0) return null
+  const latest = passed.reduce((a, b) => (b.minutes > a.minutes ? b : a))
+  const elapsed = nowMin * 60 + now.getSeconds() - latest.minutes * 60
+  if (elapsed >= 3600) return null
+  return { ...latest, elapsed }
+}
+
 export function isStalePrayerTimes(prayerTimes, now = new Date()) {
   if (!prayerTimes) return true
   const today = todayISODate()

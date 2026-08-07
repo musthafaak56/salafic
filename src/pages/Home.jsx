@@ -31,6 +31,7 @@ import {
   isStalePrayerTimes,
   prayerEntry,
   prayerKeysForDate,
+  recentlyPassedPrayer,
   relativeDayLabel,
   secondsUntil,
 } from '../lib/utils'
@@ -86,6 +87,41 @@ function useNow(intervalMs = 1000) {
 
 function CountdownPanel({ prayerTimes }) {
   const now = useNow()
+  const passed = recentlyPassedPrayer(prayerTimes, now)
+  if (passed) {
+    return (
+      <div className="glass relative overflow-hidden rounded-3xl border border-white/15 bg-white/5 p-6 shadow-[0_24px_80px_-24px_rgba(0,0,0,0.7)] backdrop-blur-xl sm:p-8">
+        <div className="flex flex-col items-start justify-between gap-6 sm:flex-row sm:items-center">
+          <div>
+            <p className="font-display text-xs font-semibold tracking-[0.28em] text-gold uppercase">
+              Iqama passed
+            </p>
+            <p className="mt-2 text-6xl font-bold tracking-tight text-white tabular-nums sm:text-7xl">
+              {format12h(passed.time)}
+            </p>
+            <p className="mt-2 text-sm text-white/70">
+              {passed.label} began{' '}
+              <span className="font-medium text-white/80">
+                {passed.elapsed >= 60
+                  ? `${Math.floor(passed.elapsed / 60)} min ${passed.elapsed % 60} sec ago`
+                  : `${passed.elapsed} sec ago`}
+              </span>
+            </p>
+          </div>
+          <div className="sm:text-right">
+            <p
+              className="text-6xl font-bold tracking-tight text-gold tabular-nums sm:text-7xl"
+              role="timer"
+              aria-live="off"
+            >
+              +{formatHMS(passed.elapsed)}
+            </p>
+            <p className="mt-2 text-sm text-white/70">since iqama</p>
+          </div>
+        </div>
+      </div>
+    )
+  }
   const next = getNextPrayer(prayerTimes, now)
   if (!next) return null
   const usesIqama = Boolean(next.iqama)
