@@ -7,6 +7,24 @@ export const PRAYER_KEYS = [
   { key: 'jumuah', label: 'Jumuah' },
 ]
 
+// Is the given date (YYYY-MM-DD) a Friday?
+export function isFriday(dateStr) {
+  const d = new Date(`${String(dateStr).slice(0, 10)}T00:00:00`)
+  return !Number.isNaN(d.getTime()) && d.getDay() === 5
+}
+
+// The prayer cards to show for a given schedule date: on Fridays the
+// Friday prayer ("Jumuah") replaces Dhuhr in the same slot; on other
+// days Jumuah is not shown.
+export function prayerKeysForDate(dateStr) {
+  if (isFriday(dateStr)) {
+    return PRAYER_KEYS.filter((p) => p.key !== 'jumuah').map((p) =>
+      p.key === 'dhuhr' ? { key: 'jumuah', label: 'Jumuah' } : p
+    )
+  }
+  return PRAYER_KEYS.filter((p) => p.key !== 'jumuah')
+}
+
 export function formatDate(value) {
   if (!value) return '—'
   if (value && typeof value.toDate === 'function') return value.toDate().toLocaleDateString()
@@ -143,7 +161,7 @@ export function getNextPrayer(prayerTimes, now = new Date()) {
   if (!prayerTimes) return null
   const nowMin = now.getHours() * 60 + now.getMinutes()
   const candidates = []
-  for (const { key, label } of PRAYER_KEYS) {
+  for (const { key, label } of prayerKeysForDate(prayerTimes.date)) {
     const { adhaan, iqama } = prayerEntry(prayerTimes[key])
     const time = iqama || adhaan
     if (!time) continue

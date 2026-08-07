@@ -4,6 +4,7 @@ import {
   PRAYER_KEYS,
   addMinutes,
   prayerEntry,
+  prayerKeysForDate,
   toMinutes,
   todayISODate,
 } from '../../lib/utils'
@@ -13,14 +14,18 @@ import Field, { inputClass } from '../../components/Field'
 
 function withGap(values, mins) {
   return Object.fromEntries(
-    Object.entries(values).map(([key, entry]) => [
-      key,
-      {
-        ...entry,
-        gap: mins,
-        iqama: entry.adhaan ? addMinutes(entry.adhaan, mins) : '',
-      },
-    ])
+    Object.entries(values).map(([key, entry]) =>
+      key === 'jumuah'
+        ? [key, entry]
+        : [
+            key,
+            {
+              ...entry,
+              gap: mins,
+              iqama: entry.adhaan ? addMinutes(entry.adhaan, mins) : '',
+            },
+          ]
+    )
   )
 }
 
@@ -71,12 +76,17 @@ export default function PrayerTimesForm({ onSaved, initialValues }) {
           [key]: {
             ...entry,
             adhaan: value,
-            iqama: value ? addMinutes(value, entry.gap) : '',
+            iqama:
+              key === 'jumuah'
+                ? entry.iqama
+                : value
+                  ? addMinutes(value, entry.gap)
+                  : '',
           },
         }
       }
       if (part === 'gap') {
-        if (!Number.isFinite(mins) || mins < 0) return v
+        if (key === 'jumuah' || !Number.isFinite(mins) || mins < 0) return v
         return {
           ...v,
           [key]: {
@@ -104,7 +114,8 @@ export default function PrayerTimesForm({ onSaved, initialValues }) {
           ...entry,
           offset: (entry.offset ?? 0) + delta,
           adhaan,
-          iqama: addMinutes(adhaan, entry.gap),
+          iqama:
+            key === 'jumuah' ? entry.iqama : addMinutes(adhaan, entry.gap),
         },
       }
     })
@@ -231,7 +242,8 @@ export default function PrayerTimesForm({ onSaved, initialValues }) {
       </div>
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        {PRAYER_KEYS.map((p) => {
+        {prayerKeysForDate(date).map((p) => {
+          const isJumuah = p.key === 'jumuah'
           const offset = values[p.key].offset ?? 0
           return (
             <div key={p.key} className="rounded-lg border border-line bg-canvas p-3">
@@ -269,57 +281,66 @@ export default function PrayerTimesForm({ onSaved, initialValues }) {
                   />
                 </div>
               </div>
-              <div className="mt-2">
-                <label
-                  htmlFor={`pt-${p.key}-gap`}
-                  className="mb-1 block text-xs text-ink-secondary"
-                >
-                  Gap after adhaan (min)
-                </label>
-                <input
-                  id={`pt-${p.key}-gap`}
-                  type="number"
-                  min="0"
-                  max="120"
-                  value={values[p.key].gap}
-                  onChange={(e) => update(p.key, 'gap', e.target.value)}
-                  className={`${inputClass} w-24`}
-                />
-              </div>
-              <div className="mt-3 border-t border-line/70 pt-2">
-                <p className="mb-1 text-xs text-ink-secondary">Adjust adhaan</p>
-                <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => adjustAdhaan(p.key, -1)}
-                    disabled={!values[p.key].adhaan}
-                    aria-label={`Subtract 1 minute from ${p.label} adhaan`}
-                    className="inline-flex h-10 w-10 cursor-pointer items-center justify-center rounded-md border border-line text-lg text-ink transition-colors hover:border-primary hover:text-primary disabled:cursor-not-allowed disabled:opacity-40"
-                  >
-                    −
-                  </button>
-                  <span
-                    className={`flex-1 text-center text-sm font-semibold tabular-nums ${
-                      offset > 0
-                        ? 'text-positive'
-                        : offset < 0
-                          ? 'text-negative'
-                          : 'text-ink-secondary'
-                    }`}
-                  >
-                    {offset > 0 ? `+${offset} min` : offset < 0 ? `${offset} min` : 'No change'}
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => adjustAdhaan(p.key, 1)}
-                    disabled={!values[p.key].adhaan}
-                    aria-label={`Add 1 minute to ${p.label} adhaan`}
-                    className="inline-flex h-10 w-10 cursor-pointer items-center justify-center rounded-md border border-line text-lg text-ink transition-colors hover:border-primary hover:text-primary disabled:cursor-not-allowed disabled:opacity-40"
-                  >
-                    +
-                  </button>
-                </div>
-              </div>
+              {isJumuah ? (
+                <p className="mt-2 rounded-md border border-gold/30 bg-gold-soft px-2 py-1.5 text-xs text-ink-secondary">
+                  Jumuah iqama is a fixed time — set it directly, it does not
+                  follow the adhaan.
+                </p>
+              ) : (
+                <>
+                  <div className="mt-2">
+                    <label
+                      htmlFor={`pt-${p.key}-gap`}
+                      className="mb-1 block text-xs text-ink-secondary"
+                    >
+                      Gap after adhaan (min)
+                    </label>
+                    <input
+                      id={`pt-${p.key}-gap`}
+                      type="number"
+                      min="0"
+                      max="120"
+                      value={values[p.key].gap}
+                      onChange={(e) => update(p.key, 'gap', e.target.value)}
+                      className={`${inputClass} w-24`}
+                    />
+                  </div>
+                  <div className="mt-3 border-t border-line/70 pt-2">
+                    <p className="mb-1 text-xs text-ink-secondary">Adjust adhaan</p>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => adjustAdhaan(p.key, -1)}
+                        disabled={!values[p.key].adhaan}
+                        aria-label={`Subtract 1 minute from ${p.label} adhaan`}
+                        className="inline-flex h-10 w-10 cursor-pointer items-center justify-center rounded-md border border-line text-lg text-ink transition-colors hover:border-primary hover:text-primary disabled:cursor-not-allowed disabled:opacity-40"
+                      >
+                        −
+                      </button>
+                      <span
+                        className={`flex-1 text-center text-sm font-semibold tabular-nums ${
+                          offset > 0
+                            ? 'text-positive'
+                            : offset < 0
+                              ? 'text-negative'
+                              : 'text-ink-secondary'
+                        }`}
+                      >
+                        {offset > 0 ? `+${offset} min` : offset < 0 ? `${offset} min` : 'No change'}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => adjustAdhaan(p.key, 1)}
+                        disabled={!values[p.key].adhaan}
+                        aria-label={`Add 1 minute to ${p.label} adhaan`}
+                        className="inline-flex h-10 w-10 cursor-pointer items-center justify-center rounded-md border border-line text-lg text-ink transition-colors hover:border-primary hover:text-primary disabled:cursor-not-allowed disabled:opacity-40"
+                      >
+                        +
+                      </button>
+                    </div>
+                  </div>
+                </>
+              )}
             </div>
           )
         })}

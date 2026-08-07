@@ -27,6 +27,7 @@ import {
   iqamaGapLabel,
   isStalePrayerTimes,
   prayerEntry,
+  prayerKeysForDate,
   relativeDayLabel,
   secondsUntil,
 } from '../lib/utils'
@@ -134,7 +135,7 @@ function CountdownPanel({ prayerTimes }) {
 }
 
 function MarqueeRow() {
-  const items = [...PRAYER_KEYS, ...PRAYER_KEYS]
+  const items = [...PRAYER_KEYS.filter((p) => p.key !== 'jumuah'), ...PRAYER_KEYS.filter((p) => p.key !== 'jumuah')]
   return (
     <div className="overflow-hidden border-y border-line/70 bg-cream/60 py-5" aria-hidden="true">
       <div className="animate-marquee flex w-max items-center gap-10 whitespace-nowrap">
@@ -166,7 +167,7 @@ function BentoPrayerTimes({ prayerTimes, next, loading }) {
   }
   return (
     <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-      {PRAYER_KEYS.map((p) => {
+      {prayerKeysForDate(prayerTimes.date).map((p) => {
         const isNext = next?.key === p.key
         const { adhaan, iqama } = prayerEntry(prayerTimes[p.key])
         const gap = iqamaGapLabel(adhaan, iqama)
@@ -201,7 +202,7 @@ function BentoPrayerTimes({ prayerTimes, next, loading }) {
                 {format12h(iqama)}
               </span>
             </div>
-            {gap ? (
+            {p.key !== 'jumuah' && gap ? (
               <p className="mt-2 border-t border-line/70 pt-2 text-xs font-medium text-gold tabular-nums">
                 {gap} after adhaan
               </p>

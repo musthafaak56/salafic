@@ -1,13 +1,13 @@
 import { useEffect, useState } from 'react'
 import { getLatestPrayerTimes } from '../../lib/firestore'
 import {
-  PRAYER_KEYS,
   format12h,
   formatDateTime,
   getNextPrayer,
   iqamaGapLabel,
   isStalePrayerTimes,
   prayerEntry,
+  prayerKeysForDate,
   relativeDayLabel,
 } from '../../lib/utils'
 import Card from '../../components/Card'
@@ -76,7 +76,7 @@ export default function PrayerTimes() {
               </p>
             ) : null}
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-              {PRAYER_KEYS.map((p) => {
+              {prayerKeysForDate(current.date).map((p) => {
                 const { adhaan, iqama } = prayerEntry(current[p.key])
                 const gap = iqamaGapLabel(adhaan, iqama)
                 return (
@@ -99,7 +99,7 @@ export default function PrayerTimes() {
                         </dd>
                       </div>
                     </dl>
-                    {gap ? (
+                    {p.key !== 'jumuah' && gap ? (
                       <p className="mt-1.5 border-t border-line/70 pt-1.5 text-xs font-medium text-primary tabular-nums">
                         {gap} after adhaan
                       </p>
