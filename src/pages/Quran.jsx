@@ -13,7 +13,7 @@ import LoadingState from '../components/LoadingState'
 export default function Quran() {
   const [surahs, setSurahs] = useState(null)
   const [reciter, setReciter] = useState(RECITERS[0].id)
-  const [surahNumber, setSurahNumber] = useState(2)
+  const [surahNumber, setSurahNumber] = useState(23)
   const [startAyah, setStartAyah] = useState(1)
   const [endAyah, setEndAyah] = useState(3)
 
