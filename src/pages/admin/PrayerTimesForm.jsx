@@ -5,7 +5,6 @@ import {
   addMinutes,
   isFriday,
   prayerEntry,
-  prayerKeysForDate,
   toMinutes,
   todayISODate,
 } from '../../lib/utils'
@@ -265,7 +264,7 @@ export default function PrayerTimesForm({ onSaved, initialValues }) {
       </div>
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        {prayerKeysForDate(date).map((p) => {
+        {(isFriday(date) ? PRAYER_KEYS : PRAYER_KEYS.filter((p) => p.key !== 'jumuah')).map((p) => {
           const isJumuah = p.key === 'jumuah'
           const offset = values[p.key].offset ?? 0
           return (
