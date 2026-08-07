@@ -5,6 +5,7 @@ import { AdminRoute, SuperAdminRoute } from './components/RouteGuards'
 import Login from './pages/Login'
 import Register from './pages/Register'
 import Home from './pages/Home'
+import Quran from './pages/Quran'
 import AdminLayout from './pages/admin/AdminLayout'
 import Overview from './pages/admin/Overview'
 import Donations from './pages/admin/Donations'
@@ -29,6 +30,7 @@ function App() {
             <Route path="/login" element={<Login />} />
             <Route path="/register" element={<Register />} />
             <Route path="/" element={<Home />} />
+            <Route path="/quran" element={<Quran />} />
             <Route
               path="/admin"
               element={

@@ -1,8 +1,5 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { useGSAP } from '@gsap/react'
-import gsap from 'gsap'
-import { ScrollTrigger } from 'gsap/ScrollTrigger'
 import {
   ArrowRight,
   ArrowUpRight,
@@ -26,7 +23,6 @@ import {
   formatCurrency,
   formatDateTime,
   formatHMS,
-  fullDateLabel,
   getNextPrayer,
   iqamaGapLabel,
   isStalePrayerTimes,
@@ -37,8 +33,6 @@ import {
 import AppHeader from '../components/AppHeader'
 import LoadingState from '../components/LoadingState'
 import EmptyState from '../components/EmptyState'
-
-gsap.registerPlugin(useGSAP, ScrollTrigger)
 
 function useHomeData() {
   const [prayerTimes, setPrayerTimes] = useState(null)
@@ -256,213 +250,17 @@ function ActivityList({ items, kind, loading }) {
   )
 }
 
-function VoicesCarousel() {
-  const voices = [
-    {
-      quote:
-        'Knowing exactly where every contribution goes has changed how the whole street trusts the masjid.',
-      name: 'A member, Cherukunnu',
-      seed: 'voice-1',
-    },
-    {
-      quote:
-        'I check the adhaan time on my phone before I leave the shop. It is always right.',
-      name: 'A trader, Cherukunnu',
-      seed: 'voice-2',
-    },
-    {
-      quote:
-        'The ledger is open to everyone. That is how a community stays one.',
-      name: 'A student of the center',
-      seed: 'voice-3',
-    },
-  ]
-  const [index, setIndex] = useState(0)
-  const active = voices[index]
-
-  return (
-    <div className="relative mx-auto max-w-3xl px-4 text-center">
-      <div className="flex items-center justify-center">
-        <div className="flex -space-x-3">
-          {voices.map((v, i) => (
-            <div
-              key={v.seed}
-              className={`h-12 w-12 overflow-hidden rounded-full border-2 transition-all duration-500 ${
-                i === index ? 'scale-110 border-gold' : 'border-line opacity-60'
-              }`}
-              style={{
-                backgroundImage: `url(https://picsum.photos/seed/${v.seed}/96/96)`,
-                backgroundSize: 'cover',
-                backgroundPosition: 'center',
-                filter: 'grayscale(0.5) contrast(1.1)',
-              }}
-            />
-          ))}
-        </div>
-      </div>
-      <blockquote className="mt-8 font-display text-2xl font-medium leading-snug tracking-tight text-ink sm:text-3xl">
-        &ldquo;{active.quote}&rdquo;
-      </blockquote>
-      <p className="mt-5 text-sm font-semibold tracking-wide text-ink-secondary uppercase">
-        {active.name}
-      </p>
-      <div className="mt-8 flex items-center justify-center gap-3">
-        <button
-          type="button"
-          onClick={() => setIndex((i) => (i - 1 + voices.length) % voices.length)}
-          aria-label="Previous voice"
-          className="flex h-11 w-11 cursor-pointer items-center justify-center rounded-full border border-line bg-surface text-ink transition-colors duration-200 hover:bg-surface-subtle"
-        >
-          <ArrowRight className="h-4 w-4 rotate-180" />
-        </button>
-        {voices.map((_, i) => (
-          <button
-            key={i}
-            type="button"
-            onClick={() => setIndex(i)}
-            aria-label={`Voice ${i + 1}`}
-            className={`h-2 rounded-full transition-all duration-300 ${
-              i === index ? 'w-8 bg-gold' : 'w-2 bg-line hover:bg-ink-secondary'
-            }`}
-          />
-        ))}
-        <button
-          type="button"
-          onClick={() => setIndex((i) => (i + 1) % voices.length)}
-          aria-label="Next voice"
-          className="flex h-11 w-11 cursor-pointer items-center justify-center rounded-full border border-line bg-surface text-ink transition-colors duration-200 hover:bg-surface-subtle"
-        >
-          <ArrowRight className="h-4 w-4" />
-        </button>
-      </div>
-    </div>
-  )
-}
-
-function FooterCTA({ profile }) {
-  return (
-    <footer className="relative overflow-hidden">
-      <div className="mx-auto max-w-6xl px-4 pb-16">
-        <div className="relative overflow-hidden rounded-[2.5rem] bg-deep px-6 py-20 text-center sm:px-12 sm:py-28">
-          <div
-            className="absolute inset-0 opacity-40"
-            style={{
-              backgroundImage:
-                'url(https://picsum.photos/seed/cherukunnu-night/1600/900)',
-              backgroundSize: 'cover',
-              backgroundPosition: 'center',
-              filter: 'grayscale(0.8) contrast(1.2)',
-            }}
-          />
-          <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,rgba(7,24,18,0.15)_0%,rgba(7,24,18,0.92)_75%)]" />
-          <div className="relative">
-            <p className="font-display text-xs font-semibold tracking-[0.3em] text-gold uppercase">
-              Jumuah · Adhaan · Iqama
-            </p>
-            <h2 className="mx-auto mt-5 max-w-3xl font-display text-4xl font-bold tracking-tight text-white sm:text-6xl">
-              The call will find you here.
-            </h2>
-            <p className="mx-auto mt-5 max-w-xl text-base text-white/70">
-              Prayer times, community funds, and expenses — kept open and
-              transparent for every neighbour of Cherukunnu.
-            </p>
-            <div className="mt-10 flex flex-col items-center justify-center gap-4 sm:flex-row">
-              <a
-                href="#prayer-times"
-                className="inline-flex h-13 items-center gap-2 rounded-full bg-gold px-8 font-display text-base font-bold text-deep transition-transform duration-500 ease-out hover:scale-105"
-              >
-                View prayer times <ArrowUpRight className="h-4 w-4" weight="bold" />
-              </a>
-              {!profile ? (
-                <Link
-                  to="/login"
-                  className="inline-flex h-13 items-center gap-2 rounded-full border border-white/25 px-8 font-display text-base font-semibold text-white transition-colors duration-300 hover:bg-white/10"
-                >
-                  Sign in <ArrowRight className="h-4 w-4" />
-                </Link>
-              ) : null}
-            </div>
-          </div>
-        </div>
-
-        <div className="mt-12 flex flex-col items-center justify-between gap-6 border-t border-line pt-8 sm:flex-row">
-          <p className="font-display text-sm font-bold tracking-tight text-ink">
-            Salafi Center <span className="text-ink-secondary">· Cherukunnu</span>
-          </p>
-          <p className="text-sm text-ink-secondary">
-            {fullDateLabel(new Date())}
-          </p>
-          {profile ? (
-            <p className="text-sm text-ink-secondary">
-              Signed in as <span className="font-medium text-ink">{profile.name || profile.role}</span>
-            </p>
-          ) : null}
-        </div>
-      </div>
-    </footer>
-  )
-}
-
 export default function Home() {
   const { profile } = useAuth()
   const { prayerTimes, recentFunds, recentExpenses, totals, loading, error } =
     useHomeData()
 
-  const rootRef = useRef(null)
-  const pinRef = useRef(null)
-  const pinGalleryRef = useRef(null)
-  const revealRef = useRef(null)
-
   const now = new Date()
   const next = getNextPrayer(prayerTimes, now)
   const stale = !loading && prayerTimes ? isStalePrayerTimes(prayerTimes, now) : false
 
-  useGSAP(
-    () => {
-      const mm = gsap.matchMedia()
-
-      mm.add('(min-width: 1024px)', () => {
-        gsap.to(pinGalleryRef.current, {
-          y: () =>
-            -(
-              pinGalleryRef.current.scrollHeight -
-              pinGalleryRef.current.clientHeight
-            ),
-          ease: 'none',
-          scrollTrigger: {
-            trigger: pinRef.current,
-            start: 'top top',
-            end: '+=250%',
-            pin: true,
-            scrub: 1,
-          },
-        })
-      })
-
-      gsap.fromTo(
-        revealRef.current,
-        { opacity: 0, y: 60 },
-        {
-          opacity: 1,
-          y: 0,
-          duration: 1,
-          ease: 'power2.out',
-          scrollTrigger: { trigger: revealRef.current, start: 'top 85%' },
-        },
-      )
-
-      return () => mm.revert()
-    },
-    { scope: rootRef },
-  )
-
-  const pinPrayers = [...PRAYER_KEYS, ...PRAYER_KEYS]
-
   return (
-    <main
-      ref={rootRef}
-      className="w-full max-w-full overflow-x-hidden bg-canvas text-ink"
-    >
+    <main className="w-full max-w-full overflow-x-hidden bg-canvas text-ink">
       <AppHeader />
 
       {/* Attention — cinematic hero */}
@@ -528,7 +326,7 @@ export default function Home() {
                 The daily rhythm
               </p>
               <h2 className="mt-3 font-display text-4xl font-bold tracking-tight text-ink sm:text-5xl">
-                Five calls, one center.
+                Today&apos;s prayer times
               </h2>
             </div>
             {prayerTimes ? (
@@ -640,100 +438,6 @@ export default function Home() {
           </div>
         </div>
       </section>
-
-      {/* Desire — pinned gallery */}
-      <section
-        ref={pinRef}
-        className="relative overflow-hidden bg-deep py-28 text-white sm:py-36 lg:flex lg:h-[100svh] lg:items-center lg:py-0"
-      >
-        <div className="mx-auto grid max-w-6xl gap-12 px-4 lg:grid-cols-12">
-          <div className="lg:col-span-4">
-            <p className="font-display text-xs font-semibold tracking-[0.3em] text-gold uppercase">
-              Night to dawn
-            </p>
-            <h2 className="mt-4 font-display text-4xl font-bold leading-tight tracking-tight sm:text-5xl">
-              Five calls. One rhythm.
-            </h2>
-            <p className="mt-5 max-w-sm text-base leading-relaxed text-white/65">
-              From the quiet of Fajr to the stillness of Isha, the center keeps
-              the neighbourhood in time. Times are published by the admins of
-              the center every day, without fail.
-            </p>
-            <a
-              href="#prayer-times"
-              className="mt-8 inline-flex h-12 items-center gap-2 rounded-full border border-white/25 px-6 font-display text-sm font-semibold text-white transition-colors duration-300 hover:bg-white/10"
-            >
-              Back to schedule <ArrowUpRight className="h-4 w-4" />
-            </a>
-          </div>
-          <div
-            ref={pinGalleryRef}
-            className="max-h-[calc(100svh-8rem)] overflow-hidden lg:col-span-8"
-          >
-            <div className="grid gap-4 sm:grid-cols-2">
-              {pinPrayers.map((p, i) => {
-                const { adhaan, iqama } = prayerEntry(prayerTimes?.[p.key])
-                return (
-                  <div
-                    key={`${p.key}-${i}`}
-                    className="group rounded-3xl border border-white/10 bg-white/5 p-6 backdrop-blur-sm transition-all duration-500 hover:border-gold/50 hover:bg-white/10"
-                  >
-                    <div className="flex items-center justify-between">
-                      <p className="font-display text-sm font-semibold tracking-widest text-gold uppercase">
-                        {p.label}
-                      </p>
-                      <span className="text-[10px] font-semibold tracking-wider text-white/40 uppercase">
-                        {String((i % PRAYER_KEYS.length) + 1).padStart(2, '0')} / 05
-                      </span>
-                    </div>
-                    <div className="mt-4 flex items-baseline justify-between gap-3">
-                      <span className="text-xs text-white/50">Adhaan</span>
-                      <span className="text-2xl font-bold tabular-nums">
-                        {format12h(adhaan)}
-                      </span>
-                    </div>
-                    <div className="mt-1.5 flex items-baseline justify-between gap-3">
-                      <span className="text-xs text-white/50">Iqama</span>
-                      <span className="text-2xl font-bold tabular-nums text-gold">
-                        {format12h(iqama)}
-                      </span>
-                    </div>
-                  </div>
-                )
-              })}
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* Desire — scrubbing reveal */}
-      <section
-        ref={revealRef}
-        className="relative py-28 opacity-0 sm:py-40"
-      >
-        <div className="mx-auto max-w-5xl px-4 text-center">
-          <p className="font-display text-xs font-semibold tracking-[0.3em] text-gold uppercase">
-            The promise
-          </p>
-          <p className="mt-8 font-display text-3xl font-semibold leading-tight tracking-tight text-ink sm:text-5xl">
-            Open books build trust. Trust builds a community that prays
-            together, gives together, and grows together.
-          </p>
-        </div>
-      </section>
-
-      {/* Desire — voices */}
-      <section className="py-24 sm:py-32">
-        <div className="mx-auto max-w-6xl px-4">
-          <p className="mb-14 text-center font-display text-xs font-semibold tracking-[0.3em] text-gold uppercase">
-            Voices from the street
-          </p>
-          <VoicesCarousel />
-        </div>
-      </section>
-
-      {/* Action — footer */}
-      <FooterCTA profile={profile} />
     </main>
   )
 }

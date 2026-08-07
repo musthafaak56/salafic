@@ -96,6 +96,21 @@ export default function AppHeader({ area = 'public', onMenuClick, menuOpen }) {
           </nav>
         ) : null}
 
+        <nav className="hidden items-center gap-1 md:flex" aria-label="Public">
+          <NavLink
+            to="/quran"
+            className={({ isActive }) =>
+              `flex h-10 items-center rounded-xl px-3 text-sm font-medium transition-colors duration-200 ${
+                isActive
+                  ? 'bg-primary-soft text-primary'
+                  : 'text-ink-secondary hover:text-ink'
+              }`
+            }
+          >
+            Quran
+          </NavLink>
+        </nav>
+
         <div className="ml-auto flex items-center gap-2">
           <ThemeToggle />
 
