@@ -1,8 +1,9 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { addPrayerTimes } from '../../lib/firestore'
 import {
   PRAYER_KEYS,
   addMinutes,
+  isFriday,
   prayerEntry,
   prayerKeysForDate,
   toMinutes,
@@ -65,6 +66,21 @@ export default function PrayerTimesForm({ onSaved, initialValues }) {
   const [error, setError] = useState('')
   const [saving, setSaving] = useState(false)
   const [fetching, setFetching] = useState(false)
+
+  // On Fridays the Jumuah card borrows Dhuhr's adhaan (Friday's first
+  // adhaan is the dhuhr adhaan); its iqama stays a fixed manual entry.
+  useEffect(() => {
+    if (!isFriday(date)) return
+    setValues((v) => {
+      const d = v.dhuhr
+      const j = v.jumuah
+      if (!d.adhaan || j.adhaan) return v
+      return {
+        ...v,
+        jumuah: { ...j, adhaan: d.adhaan, offset: d.offset ?? 0 },
+      }
+    })
+  }, [date])
 
   function update(key, part, value) {
     setValues((v) => {
@@ -147,6 +163,13 @@ export default function PrayerTimesForm({ onSaved, initialValues }) {
             offset,
             adhaan,
             iqama: adhaan ? addMinutes(adhaan, entryGap) : '',
+          }
+        }
+        if (isFriday(date) && next.dhuhr?.adhaan && !next.jumuah?.adhaan) {
+          next.jumuah = {
+            ...next.jumuah,
+            adhaan: next.dhuhr.adhaan,
+            offset: next.dhuhr.offset ?? 0,
           }
         }
         return next
