@@ -5,6 +5,7 @@ import {
   ArrowUpRight,
   Compass,
   HandCoins,
+  Headphones,
   Heart,
   Lightning,
   Receipt,
@@ -301,6 +302,12 @@ export default function Home() {
             >
               Community funds <ArrowRight className="h-4 w-4" />
             </a>
+            <Link
+              to="/quran"
+              className="inline-flex h-13 items-center gap-2 rounded-full border border-gold/50 bg-white/5 px-8 font-display text-base font-semibold text-white backdrop-blur-sm transition-colors duration-300 hover:bg-gold hover:text-deep"
+            >
+              Listen to the Quran <Headphones className="h-4 w-4" weight="fill" />
+            </Link>
           </div>
 
           <div className="mx-auto mt-14 max-w-3xl">
