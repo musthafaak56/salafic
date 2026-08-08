@@ -7,6 +7,8 @@ import {
   limit,
   doc,
   setDoc,
+  updateDoc,
+  deleteDoc,
   serverTimestamp,
 } from 'firebase/firestore'
 import { db } from './firebase'
@@ -87,4 +89,35 @@ export async function addExpense(masjidId, data) {
     createdAt: serverTimestamp(),
   })
   return docRef.id
+}
+
+/* ---------- Events ---------- */
+
+export async function getEvents(masjidId = DEFAULT_MASJID_ID, count = 50) {
+  const q = query(
+    collection(masjidRef(masjidId), 'events'),
+    orderBy('eventAt', 'asc'),
+    limit(count)
+  )
+  const snap = await getDocs(q)
+  return snap.docs.map((d) => ({ id: d.id, ...d.data() }))
+}
+
+export async function addEvent(masjidId, data) {
+  const docRef = await addDoc(collection(masjidRef(masjidId), 'events'), {
+    ...data,
+    createdAt: serverTimestamp(),
+  })
+  return docRef.id
+}
+
+export async function updateEvent(masjidId, id, data) {
+  await updateDoc(doc(masjidRef(masjidId), 'events', id), {
+    ...data,
+    updatedAt: serverTimestamp(),
+  })
+}
+
+export async function deleteEvent(masjidId, id) {
+  await deleteDoc(doc(masjidRef(masjidId), 'events', id))
 }

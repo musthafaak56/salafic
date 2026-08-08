@@ -17,6 +17,7 @@ import {
   getAllFunds,
   getExpenses,
   getAllExpenses,
+  getEvents,
 } from '../lib/firestore'
 import {
   PRAYER_KEYS,
@@ -47,18 +48,20 @@ function useHomeData() {
   const [recentFunds, setRecentFunds] = useState([])
   const [recentExpenses, setRecentExpenses] = useState([])
   const [totals, setTotals] = useState({ collected: 0, spent: 0 })
+  const [upcomingEvents, setUpcomingEvents] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
 
   useEffect(() => {
     async function load() {
       try {
-        const [times, recentF, recentE, allF, allE] = await Promise.all([
+        const [times, recentF, recentE, allF, allE, events] = await Promise.all([
           getLatestPrayerTimes(),
           getFunds(),
           getExpenses(),
           getAllFunds(),
           getAllExpenses(),
+          getEvents(),
         ])
         setPrayerTimes(times)
         setRecentFunds(recentF)
@@ -67,6 +70,13 @@ function useHomeData() {
           collected: allF.reduce((s, f) => s + (Number(f.amount) || 0), 0),
           spent: allE.reduce((s, e) => s + (Number(e.amount) || 0), 0),
         })
+        const nowMs = Date.now()
+        setUpcomingEvents(
+          events
+            .filter((e) => new Date(e.eventAt).getTime() >= nowMs)
+            .sort((a, b) => new Date(a.eventAt) - new Date(b.eventAt))
+            .slice(0, 6)
+        )
       } catch (err) {
         setError(err.message)
       } finally {
@@ -76,7 +86,7 @@ function useHomeData() {
     load()
   }, [])
 
-  return { prayerTimes, recentFunds, recentExpenses, totals, loading, error }
+  return { prayerTimes, recentFunds, recentExpenses, totals, upcomingEvents, loading, error }
 }
 
 function useNow(intervalMs = 1000) {
@@ -340,7 +350,7 @@ function ActivityList({ items, kind, loading }) {
 
 export default function Home() {
   const { profile } = useAuth()
-  const { prayerTimes, recentFunds, recentExpenses, totals, loading, error } =
+  const { prayerTimes, recentFunds, recentExpenses, totals, upcomingEvents, loading, error } =
     useHomeData()
 
   const now = new Date()
@@ -535,6 +545,69 @@ export default function Home() {
           </div>
         </div>
       </section>
+
+      {upcomingEvents.length > 0 ? (
+        <section className="relative py-24 sm:py-32">
+          <div className="mx-auto max-w-6xl px-4">
+            <div className="mb-14 flex flex-wrap items-end justify-between gap-6">
+              <div>
+                <p className="font-display text-xs font-semibold tracking-[0.3em] text-gold uppercase">
+                  The community calendar
+                </p>
+                <h2 className="mt-3 font-display text-4xl font-bold tracking-tight text-ink sm:text-5xl">
+                  Upcoming events
+                </h2>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              {upcomingEvents.map((event) => {
+                const d = new Date(event.eventAt)
+                const day = d.toLocaleDateString('en-IN', { day: 'numeric' })
+                const month = d
+                  .toLocaleDateString('en-IN', { month: 'short' })
+                  .toUpperCase()
+                return (
+                  <div
+                    key={event.id}
+                    className="group flex gap-5 overflow-hidden rounded-3xl border border-line bg-surface p-6 transition-transform duration-500 ease-out hover:scale-[1.02]"
+                  >
+                    <div className="flex h-fit w-16 shrink-0 flex-col items-center rounded-2xl border border-gold/40 bg-gold-soft pt-3 pb-2">
+                      <span className="font-display text-2xl font-bold tracking-tight text-ink">
+                        {day}
+                      </span>
+                      <span className="text-xs font-semibold tracking-widest text-gold">
+                        {month}
+                      </span>
+                    </div>
+                    <div className="min-w-0">
+                      <h3 className="font-display text-lg font-bold leading-snug text-ink">
+                        {event.title}
+                      </h3>
+                      <p className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs font-medium text-ink-secondary">
+                        <span>
+                          {d.toLocaleTimeString('en-IN', {
+                            hour: 'numeric',
+                            minute: '2-digit',
+                          })}
+                        </span>
+                        {event.location ? (
+                          <span>· {event.location}</span>
+                        ) : null}
+                      </p>
+                      {event.description ? (
+                        <p className="mt-3 line-clamp-2 text-sm leading-relaxed text-ink-secondary">
+                          {event.description}
+                        </p>
+                      ) : null}
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        </section>
+      ) : null}
     </main>
   )
 }

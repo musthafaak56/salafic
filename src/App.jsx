@@ -10,6 +10,7 @@ import AdminLayout from './pages/admin/AdminLayout'
 import Overview from './pages/admin/Overview'
 import Donations from './pages/admin/Donations'
 import Expenses from './pages/admin/Expenses'
+import Events from './pages/admin/Events'
 import PrayerTimes from './pages/admin/PrayerTimes'
 
 const adminPages = (
@@ -17,6 +18,7 @@ const adminPages = (
     <Route index element={<Overview />} />
     <Route path="donations" element={<Donations />} />
     <Route path="expenses" element={<Expenses />} />
+    <Route path="events" element={<Events />} />
     <Route path="prayer-times" element={<PrayerTimes />} />
   </>
 )
