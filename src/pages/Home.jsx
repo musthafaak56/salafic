@@ -21,19 +21,22 @@ import {
 import {
   PRAYER_KEYS,
   FRIDAY_SUNNAHS,
+  addMinutes,
   format12h,
   formatCurrency,
   formatDateTime,
   formatHMS,
   getNextPrayer,
   iqamaGapLabel,
+  isDhuhaTime,
   isFriday,
   isStalePrayerTimes,
   prayerEntry,
-  prayerKeysForDate,
+  publicPrayerKeys,
   recentlyPassedPrayer,
   relativeDayLabel,
   secondsUntil,
+  todayISODate,
 } from '../lib/utils'
 import AppHeader from '../components/AppHeader'
 import LoadingState from '../components/LoadingState'
@@ -85,6 +88,37 @@ function useNow(intervalMs = 1000) {
   return now
 }
 
+function DhuhaaBanner({ prayerTimes }) {
+  const now = useNow()
+  if (!isDhuhaTime(prayerTimes, now)) return null
+  const dhuhr = prayerEntry(prayerTimes.dhuhr).adhaan
+  const end = secondsUntil(addMinutes(dhuhr, -20), false, now) ?? 0
+  return (
+    <div className="relative overflow-hidden rounded-3xl border border-gold/50 bg-gold-soft/15 p-5 shadow-[0_24px_80px_-24px_rgba(0,0,0,0.7)] sm:p-6">
+      <div className="flex flex-col items-start justify-between gap-4 sm:flex-row sm:items-center">
+        <div className="flex items-center gap-4">
+          <span className="relative flex h-3 w-3" aria-hidden="true">
+            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-gold opacity-75" />
+            <span className="relative inline-flex h-3 w-3 rounded-full bg-gold" />
+          </span>
+          <p className="font-display text-2xl font-bold tracking-tight text-gold sm:text-3xl">
+            It&apos;s time for Dhuhaa prayer
+          </p>
+        </div>
+        <div className="text-sm text-white/80">
+          Ends{' '}
+          <span className="font-semibold text-white/90">
+            {format12h(addMinutes(dhuhr, -20))}
+          </span>{' '}
+          · dhuhr adhaan{' '}
+          <span className="font-semibold text-white/90">{format12h(dhuhr)}</span>{' '}
+          · <span className="font-semibold text-gold tabular-nums">-{formatHMS(end)}</span>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function CountdownPanel({ prayerTimes }) {
   const now = useNow()
   const passed = recentlyPassedPrayer(prayerTimes, now)
@@ -122,7 +156,7 @@ function CountdownPanel({ prayerTimes }) {
       </div>
     )
   }
-  const next = getNextPrayer(prayerTimes, now)
+  const next = getNextPrayer(prayerTimes, now, publicPrayerKeys(prayerTimes))
   if (!next) return null
   const usesIqama = Boolean(next.iqama)
   const toAdhaan = secondsUntil(next.adhaan, !next.isToday, now)
@@ -174,7 +208,7 @@ function CountdownPanel({ prayerTimes }) {
 }
 
 function MarqueeRow() {
-  const friday = isFriday(new Date().toISOString().slice(0, 10))
+  const friday = isFriday(todayISODate())
   const source = friday
     ? FRIDAY_SUNNAHS.map((label) => ({ key: label, label }))
     : PRAYER_KEYS.filter((p) => p.key !== 'jumuah')
@@ -210,7 +244,17 @@ function BentoPrayerTimes({ prayerTimes, next, loading }) {
   }
   return (
     <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-      {prayerKeysForDate(prayerTimes.date).map((p) => {
+      {prayerTimes?.sunrise ? (
+        <div className="flex items-center justify-between rounded-2xl border border-gold/30 bg-gold-soft px-4 py-3">
+          <p className="font-display text-sm font-semibold text-ink-secondary">
+            Sunrise
+          </p>
+          <p className="text-lg font-semibold tabular-nums text-ink">
+            {format12h(prayerEntry(prayerTimes.sunrise).adhaan)}
+          </p>
+        </div>
+      ) : null}
+      {publicPrayerKeys(prayerTimes).map((p) => {
         const isNext = next?.key === p.key
         const { adhaan, iqama } = prayerEntry(prayerTimes[p.key])
         const gap = iqamaGapLabel(adhaan, iqama)
@@ -300,7 +344,7 @@ export default function Home() {
     useHomeData()
 
   const now = new Date()
-  const next = getNextPrayer(prayerTimes, now)
+  const next = getNextPrayer(prayerTimes, now, publicPrayerKeys(prayerTimes))
   const stale = !loading && prayerTimes ? isStalePrayerTimes(prayerTimes, now) : false
 
   return (
@@ -358,7 +402,10 @@ export default function Home() {
                 Loading tonight&apos;s call…
               </div>
             ) : prayerTimes ? (
-              <CountdownPanel prayerTimes={prayerTimes} />
+              <div className="space-y-4">
+                <DhuhaaBanner prayerTimes={prayerTimes} />
+                <CountdownPanel prayerTimes={prayerTimes} />
+              </div>
             ) : null}
           </div>
         </div>

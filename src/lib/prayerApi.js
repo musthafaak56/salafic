@@ -54,6 +54,7 @@ export async function fetchPrayerTimes({ latitude, longitude, date, method = '3'
 
   const t = json.data.timings
   return {
+    sunrise: t.Sunrise?.slice(0, 5) || '',
     fajr: t.Fajr?.slice(0, 5) || '',
     dhuhr: t.Dhuhr?.slice(0, 5) || '',
     asr: t.Asr?.slice(0, 5) || '',

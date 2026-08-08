@@ -38,6 +38,19 @@ export function prayerKeysForDate(dateStr) {
   return PRAYER_KEYS.filter((p) => p.key !== 'jumuah')
 }
 
+// Keys for the public site: jumuah replaces dhuhr only when the real
+// calendar day is Friday (regardless of which day the published doc was
+// saved for), falling back to the dhuhr times when no jumuah times were
+// saved.
+export function publicPrayerKeys(prayerTimes) {
+  if (!prayerTimes) return []
+  return prayerKeysForDate(todayISODate()).map((p) => {
+    if (p.key !== 'jumuah') return p
+    const { adhaan, iqama } = prayerEntry(prayerTimes.jumuah)
+    return !adhaan && !iqama ? { key: 'dhuhr', label: 'Dhuhr' } : p
+  })
+}
+
 export function formatDate(value) {
   if (!value) return '—'
   if (value && typeof value.toDate === 'function') return value.toDate().toLocaleDateString()
@@ -62,7 +75,8 @@ export function formatCurrency(amount) {
 }
 
 export function todayISODate() {
-  return new Date().toISOString().slice(0, 10)
+  const d = new Date()
+  return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10)
 }
 
 export function fullDateLabel(date = new Date()) {
@@ -170,11 +184,11 @@ export function formatHMS(totalSeconds) {
 
 // The next prayer is computed from the iqama time (when the
 // congregation actually starts), falling back to adhaan.
-export function getNextPrayer(prayerTimes, now = new Date()) {
+export function getNextPrayer(prayerTimes, now = new Date(), keys) {
   if (!prayerTimes) return null
   const nowMin = now.getHours() * 60 + now.getMinutes()
   const candidates = []
-  for (const { key, label } of prayerKeysForDate(prayerTimes.date)) {
+  for (const { key, label } of keys || prayerKeysForDate(prayerTimes.date)) {
     const { adhaan, iqama } = prayerEntry(prayerTimes[key])
     const time = iqama || adhaan
     if (!time) continue
@@ -207,7 +221,7 @@ export function recentlyPassedPrayer(prayerTimes, now = new Date()) {
   if (!prayerTimes) return null
   const nowMin = now.getHours() * 60 + now.getMinutes()
   const passed = []
-  for (const { key, label } of prayerKeysForDate(prayerTimes.date)) {
+  for (const { key, label } of publicPrayerKeys(prayerTimes)) {
     const { adhaan, iqama } = prayerEntry(prayerTimes[key])
     const time = iqama || adhaan
     const t = toMinutes(time)
@@ -219,6 +233,26 @@ export function recentlyPassedPrayer(prayerTimes, now = new Date()) {
   const elapsed = nowMin * 60 + now.getSeconds() - latest.minutes * 60
   if (elapsed >= 3600) return null
   return { ...latest, elapsed }
+}
+
+// The dhuhaa window depends on sunrise and the dhuhr adhaan, so it
+// lives on its own rather than in PRAYER_KEYS. It runs from 20 minutes
+// after sunrise until 20 minutes before the dhuhr adhaan.
+export function dhuhaaWindow(prayerTimes, now = new Date()) {
+  if (!prayerTimes) return null
+  const sunrise = prayerEntry(prayerTimes.sunrise).adhaan
+  const dhuhr = prayerEntry(prayerTimes.dhuhr).adhaan
+  const start = toMinutes(addMinutes(sunrise, 20))
+  const end = toMinutes(addMinutes(dhuhr, -20))
+  if (start === null || end === null) return null
+  const nowMin = now.getHours() * 60 + now.getMinutes()
+  if (nowMin < start || nowMin >= end) return null
+  return { start: addMinutes(sunrise, 20), end: addMinutes(dhuhr, -20) }
+}
+
+// Is it currently the time for the dhuhaa prayer?
+export function isDhuhaTime(prayerTimes, now = new Date()) {
+  return Boolean(dhuhaaWindow(prayerTimes, now))
 }
 
 export function isStalePrayerTimes(prayerTimes, now = new Date()) {

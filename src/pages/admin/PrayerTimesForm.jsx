@@ -42,6 +42,7 @@ export default function PrayerTimesForm({ onSaved, initialValues }) {
   const current = initialValues ?? {}
   const defaultGap = toGap(current.iqamaGapMinutes, 10)
   const [date, setDate] = useState(todayISODate())
+  const [sunrise, setSunrise] = useState(current.sunrise ?? '')
   const [values, setValues] = useState(() =>
     Object.fromEntries(
       PRAYER_KEYS.map((p) => {
@@ -147,6 +148,7 @@ export default function PrayerTimesForm({ onSaved, initialValues }) {
     try {
       const { latitude, longitude } = await getCurrentPosition()
       const fetched = await fetchPrayerTimes({ latitude, longitude, date, method })
+      if (fetched.sunrise) setSunrise(fetched.sunrise)
       setValues((v) => {
         const next = { ...v }
         for (const [key, time] of Object.entries(fetched)) {
@@ -186,6 +188,7 @@ export default function PrayerTimesForm({ onSaved, initialValues }) {
     try {
       await addPrayerTimes('main', {
         date,
+        sunrise,
         iqamaGapMinutes: gap,
         ...values,
       })
@@ -232,6 +235,19 @@ export default function PrayerTimesForm({ onSaved, initialValues }) {
               </option>
             ))}
           </select>
+        </Field>
+        <Field
+          label="Sunrise"
+          htmlFor="pt-sunrise"
+          hint="Dhuhaa begins 20 minutes after this."
+        >
+          <input
+            id="pt-sunrise"
+            type="time"
+            value={sunrise}
+            onChange={(e) => setSunrise(e.target.value)}
+            className={inputClass}
+          />
         </Field>
       </div>
 
