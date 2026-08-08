@@ -149,33 +149,30 @@ function CountdownPanel({ prayerTimes }) {
   if (passed) {
     return (
       <div className="glass relative overflow-hidden rounded-3xl border border-white/15 bg-white/5 p-6 shadow-[0_24px_80px_-24px_rgba(0,0,0,0.7)] backdrop-blur-xl sm:p-8">
-        <div className="flex flex-col items-start justify-between gap-6 sm:flex-row sm:items-center">
-          <div>
-            <p className="font-display text-xs font-semibold tracking-[0.28em] text-gold uppercase">
-              Iqama passed
-            </p>
-            <p className="mt-2 text-6xl font-bold tracking-tight text-white tabular-nums sm:text-7xl">
-              {format12h(passed.time)}
-            </p>
-            <p className="mt-2 text-sm text-white/70">
-              {passed.label} began{' '}
-              <span className="font-medium text-white/80">
-                {passed.elapsed >= 60
-                  ? `${Math.floor(passed.elapsed / 60)} min ${passed.elapsed % 60} sec ago`
-                  : `${passed.elapsed} sec ago`}
-              </span>
-            </p>
-          </div>
-          <div className="sm:text-right">
-            <p
-              className="text-6xl font-bold tracking-tight text-gold tabular-nums sm:text-7xl"
-              role="timer"
-              aria-live="off"
-            >
-              +{formatHMS(passed.elapsed)}
-            </p>
-            <p className="mt-2 text-sm text-white/70">since iqama</p>
-          </div>
+        <div className="grid grid-cols-1 gap-x-8 gap-y-2 sm:grid-cols-2 sm:items-baseline">
+          <p className="font-display text-xs font-semibold tracking-[0.28em] text-gold uppercase">
+            Iqama passed
+          </p>
+          <p className="hidden sm:block" aria-hidden="true" />
+          <p className="text-6xl font-bold tracking-tight text-white tabular-nums sm:text-7xl">
+            {format12h(passed.time)}
+          </p>
+          <p
+            className="text-6xl font-bold tracking-tight text-gold tabular-nums sm:text-right sm:text-7xl"
+            role="timer"
+            aria-live="off"
+          >
+            +{formatHMS(passed.elapsed)}
+          </p>
+          <p className="text-sm text-white/70">
+            {passed.label} began{' '}
+            <span className="font-medium text-white/80">
+              {passed.elapsed >= 60
+                ? `${Math.floor(passed.elapsed / 60)} min ${passed.elapsed % 60} sec ago`
+                : `${passed.elapsed} sec ago`}
+            </span>
+          </p>
+          <p className="text-sm text-white/70 sm:text-right">since iqama</p>
         </div>
       </div>
     )
@@ -192,40 +189,37 @@ function CountdownPanel({ prayerTimes }) {
 
   return (
     <div className="glass relative overflow-hidden rounded-3xl border border-white/15 bg-white/5 p-6 shadow-[0_24px_80px_-24px_rgba(0,0,0,0.7)] backdrop-blur-xl sm:p-8">
-      <div className="flex flex-col items-start justify-between gap-6 sm:flex-row sm:items-center">
-        <div>
-          <p className="font-display text-xs font-semibold tracking-[0.28em] text-gold uppercase">
-            Next call
-          </p>
-          <p className="mt-2 text-6xl font-bold tracking-tight text-white tabular-nums sm:text-7xl">
-            {format12h(targetTime)}
-          </p>
-          <p className="mt-2 text-sm text-white/70">
-            {next.label} {phase === 'adhaan' ? 'adhaan' : 'iqama'} ·{' '}
-            {next.isToday ? 'Today' : 'Tomorrow'}
-            {usesIqama ? (
-              <span className="text-white/50">
-                {' '}
-                · {phase === 'adhaan' ? 'Iqama' : 'Adhaan'} at{' '}
-                <span className="font-medium tabular-nums text-white/80">
-                  {format12h(phase === 'adhaan' ? next.iqama : next.adhaan)}
-                </span>
+      <div className="grid grid-cols-1 gap-x-8 gap-y-2 sm:grid-cols-2 sm:items-baseline">
+        <p className="font-display text-xs font-semibold tracking-[0.28em] text-gold uppercase">
+          Next call
+        </p>
+        <p className="hidden sm:block" aria-hidden="true" />
+        <p className="text-6xl font-bold tracking-tight text-white tabular-nums sm:text-7xl">
+          {format12h(targetTime)}
+        </p>
+        <p
+          className="text-6xl font-bold tracking-tight text-gold tabular-nums sm:text-right sm:text-7xl"
+          role="timer"
+          aria-live="off"
+        >
+          -{formatHMS(remaining ?? 0)}
+        </p>
+        <p className="text-sm text-white/70">
+          {next.label} {phase === 'adhaan' ? 'adhaan' : 'iqama'} ·{' '}
+          {next.isToday ? 'Today' : 'Tomorrow'}
+          {usesIqama ? (
+            <span className="text-white/50">
+              {' '}
+              · {phase === 'adhaan' ? 'Iqama' : 'Adhaan'} at{' '}
+              <span className="font-medium tabular-nums text-white/80">
+                {format12h(phase === 'adhaan' ? next.iqama : next.adhaan)}
               </span>
-            ) : null}
-          </p>
-        </div>
-        <div className="sm:text-right">
-          <p
-            className="text-6xl font-bold tracking-tight text-gold tabular-nums sm:text-7xl"
-            role="timer"
-            aria-live="off"
-          >
-            -{formatHMS(remaining ?? 0)}
-          </p>
-          <p className="mt-2 text-sm text-white/70">
-            {phase === 'adhaan' ? 'Adhaan' : 'Iqama'} remaining
-          </p>
-        </div>
+            </span>
+          ) : null}
+        </p>
+        <p className="text-sm text-white/70 sm:text-right">
+          {phase === 'adhaan' ? 'Adhaan' : 'Iqama'} remaining
+        </p>
       </div>
     </div>
   )
@@ -401,7 +395,7 @@ export default function Home() {
             Cherukunnu · Kannur
           </p>
           <h1 className="mx-auto mt-6 max-w-6xl font-display text-[clamp(2.6rem,6vw,5.5rem)] font-bold leading-[1.02] tracking-tight text-white">
-            The call that gathers Cherukunnu.
+            Cherukunnu Salafi Center
           </h1>
           <p className="mx-auto mt-6 max-w-xl text-lg leading-relaxed text-white/75">
             Prayer times, community funds, and expenses — kept open and
