@@ -58,6 +58,19 @@ service cloud.firestore {
         allow read: if true;
         allow create, update, delete: if isAdminOf(masjidId);
       }
+
+      // Forms are publicly readable so the public can fill them in;
+      // only admins may create, edit or delete them.
+      match /forms/{formId} {
+        allow read: if true;
+        allow create, update, delete: if isAdminOf(masjidId);
+      }
+
+      // Anyone can submit a form; only admins may read submissions.
+      match /formSubmissions/{submissionId} {
+        allow create: if true;
+        allow read, update, delete: if isAdminOf(masjidId);
+      }
     }
   }
 }

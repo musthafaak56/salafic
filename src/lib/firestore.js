@@ -2,6 +2,7 @@ import {
   collection,
   addDoc,
   getDocs,
+  getDoc,
   query,
   orderBy,
   limit,
@@ -120,4 +121,60 @@ export async function updateEvent(masjidId, id, data) {
 
 export async function deleteEvent(masjidId, id) {
   await deleteDoc(doc(masjidRef(masjidId), 'events', id))
+}
+
+/* ---------- Forms ---------- */
+
+export async function getForms(masjidId = DEFAULT_MASJID_ID) {
+  const q = query(
+    collection(masjidRef(masjidId), 'forms'),
+    orderBy('createdAt', 'desc')
+  )
+  const snap = await getDocs(q)
+  return snap.docs.map((d) => ({ id: d.id, ...d.data() }))
+}
+
+export async function getForm(masjidId, formId) {
+  const snap = await getDoc(doc(masjidRef(masjidId), 'forms', formId))
+  return snap.exists() ? { id: snap.id, ...snap.data() } : null
+}
+
+export async function addForm(masjidId, data) {
+  const docRef = await addDoc(collection(masjidRef(masjidId), 'forms'), {
+    ...data,
+    createdAt: serverTimestamp(),
+  })
+  return docRef.id
+}
+
+export async function updateForm(masjidId, id, data) {
+  await updateDoc(doc(masjidRef(masjidId), 'forms', id), {
+    ...data,
+    updatedAt: serverTimestamp(),
+  })
+}
+
+export async function deleteForm(masjidId, id) {
+  await deleteDoc(doc(masjidRef(masjidId), 'forms', id))
+}
+
+/* ---------- Form submissions ---------- */
+
+export async function getSubmissions(masjidId, formId) {
+  const q = query(
+    collection(masjidRef(masjidId), 'formSubmissions'),
+    orderBy('createdAt', 'desc')
+  )
+  const snap = await getDocs(q)
+  return snap.docs
+    .map((d) => ({ id: d.id, ...d.data() }))
+    .filter((s) => s.formId === formId)
+}
+
+export async function addSubmission(masjidId, data) {
+  const docRef = await addDoc(collection(masjidRef(masjidId), 'formSubmissions'), {
+    ...data,
+    createdAt: serverTimestamp(),
+  })
+  return docRef.id
 }

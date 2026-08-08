@@ -18,6 +18,7 @@ import {
   getExpenses,
   getAllExpenses,
   getEvents,
+  getForms,
 } from '../lib/firestore'
 import {
   PRAYER_KEYS,
@@ -49,20 +50,23 @@ function useHomeData() {
   const [recentExpenses, setRecentExpenses] = useState([])
   const [totals, setTotals] = useState({ collected: 0, spent: 0 })
   const [upcomingEvents, setUpcomingEvents] = useState([])
+  const [openForms, setOpenForms] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
 
   useEffect(() => {
     async function load() {
       try {
-        const [times, recentF, recentE, allF, allE, events] = await Promise.all([
-          getLatestPrayerTimes(),
-          getFunds(),
-          getExpenses(),
-          getAllFunds(),
-          getAllExpenses(),
-          getEvents(),
-        ])
+        const [times, recentF, recentE, allF, allE, events, forms] =
+          await Promise.all([
+            getLatestPrayerTimes(),
+            getFunds(),
+            getExpenses(),
+            getAllFunds(),
+            getAllExpenses(),
+            getEvents(),
+            getForms(),
+          ])
         setPrayerTimes(times)
         setRecentFunds(recentF)
         setRecentExpenses(recentE)
@@ -77,6 +81,7 @@ function useHomeData() {
             .sort((a, b) => new Date(a.eventAt) - new Date(b.eventAt))
             .slice(0, 6)
         )
+        setOpenForms((forms ?? []).filter((f) => f.open !== false).slice(0, 4))
       } catch (err) {
         setError(err.message)
       } finally {
@@ -86,7 +91,16 @@ function useHomeData() {
     load()
   }, [])
 
-  return { prayerTimes, recentFunds, recentExpenses, totals, upcomingEvents, loading, error }
+  return {
+    prayerTimes,
+    recentFunds,
+    recentExpenses,
+    totals,
+    upcomingEvents,
+    openForms,
+    loading,
+    error,
+  }
 }
 
 function useNow(intervalMs = 1000) {
@@ -350,8 +364,16 @@ function ActivityList({ items, kind, loading }) {
 
 export default function Home() {
   const { profile } = useAuth()
-  const { prayerTimes, recentFunds, recentExpenses, totals, upcomingEvents, loading, error } =
-    useHomeData()
+  const {
+    prayerTimes,
+    recentFunds,
+    recentExpenses,
+    totals,
+    upcomingEvents,
+    openForms,
+    loading,
+    error,
+  } = useHomeData()
 
   const now = new Date()
   const next = getNextPrayer(prayerTimes, now, publicPrayerKeys(prayerTimes))
@@ -604,6 +626,48 @@ export default function Home() {
                   </div>
                 )
               })}
+            </div>
+          </div>
+        </section>
+      ) : null}
+
+      {openForms.length > 0 ? (
+        <section className="relative py-24 sm:py-32">
+          <div className="mx-auto max-w-6xl px-4">
+            <div className="mb-14 flex flex-wrap items-end justify-between gap-6">
+              <div>
+                <p className="font-display text-xs font-semibold tracking-[0.3em] text-gold uppercase">
+                  Open registrations
+                </p>
+                <h2 className="mt-3 font-display text-4xl font-bold tracking-tight text-ink sm:text-5xl">
+                  Sign up for what&apos;s coming
+                </h2>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+              {openForms.map((form) => (
+                <Link
+                  key={form.id}
+                  to={`/forms/${form.id}`}
+                  className="group flex flex-col rounded-3xl border border-line bg-surface p-6 transition-transform duration-500 ease-out hover:scale-[1.02]"
+                >
+                  <p className="text-xs font-semibold tracking-wider text-gold uppercase">
+                    {form.event || 'Registration form'}
+                  </p>
+                  <h3 className="mt-2 font-display text-lg font-bold leading-snug text-ink">
+                    {form.title}
+                  </h3>
+                  {form.description ? (
+                    <p className="mt-2 line-clamp-2 text-sm leading-relaxed text-ink-secondary">
+                      {form.description}
+                    </p>
+                  ) : null}
+                  <span className="mt-5 inline-flex items-center gap-2 text-sm font-semibold text-primary">
+                    Fill the form <ArrowRight className="h-4 w-4" />
+                  </span>
+                </Link>
+              ))}
             </div>
           </div>
         </section>

@@ -44,6 +44,12 @@ const icons = {
       <path d="M8 3v4m8-4v4M4 10h16" />
     </svg>
   ),
+  forms: (
+    <svg {...iconProps} className="h-5 w-5">
+      <path d="M9 12h6m-6 4h6m2 5H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5.586a1 1 0 0 1 .707.293l5.414 5.414a1 1 0 0 1 .293.707V19a2 2 0 0 1-2 2Z" />
+      <path d="M14 3v4a1 1 0 0 0 1 1h4" />
+    </svg>
+  ),
   eye: (
     <svg {...iconProps} className="h-5 w-5">
       <path d="M2.036 12.322a1.012 1.012 0 0 1 0-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178Z" />
@@ -72,6 +78,7 @@ const adminNav = (base) => [
   { to: `${base}/donations`, label: 'Donations', end: false, icon: icons.donations },
   { to: `${base}/expenses`, label: 'Expenses', end: false, icon: icons.expenses },
   { to: `${base}/events`, label: 'Events', end: false, icon: icons.events },
+  { to: `${base}/forms`, label: 'Forms', end: false, icon: icons.forms },
   { to: `${base}/prayer-times`, label: 'Prayer Times', end: false, icon: icons.prayer },
 ]
 
