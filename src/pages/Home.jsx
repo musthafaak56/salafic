@@ -50,6 +50,7 @@ function useHomeData() {
   const [recentExpenses, setRecentExpenses] = useState([])
   const [totals, setTotals] = useState({ collected: 0, spent: 0 })
   const [upcomingEvents, setUpcomingEvents] = useState([])
+  const [allEvents, setAllEvents] = useState([])
   const [openForms, setOpenForms] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
@@ -57,7 +58,7 @@ function useHomeData() {
   useEffect(() => {
     async function load() {
       try {
-        const [times, recentF, recentE, allF, allE, events, forms] =
+        const [times, recentF, recentE, allF, allE, allEvents, forms] =
           await Promise.all([
             getLatestPrayerTimes(),
             getFunds(),
@@ -76,12 +77,13 @@ function useHomeData() {
         })
         const nowMs = Date.now()
         setUpcomingEvents(
-          events
+          allEvents
             .filter((e) => new Date(e.eventAt).getTime() >= nowMs)
             .sort((a, b) => new Date(a.eventAt) - new Date(b.eventAt))
             .slice(0, 6)
         )
         setOpenForms((forms ?? []).filter((f) => f.open !== false).slice(0, 4))
+        setAllEvents(allEvents)
       } catch (err) {
         setError(err.message)
       } finally {
@@ -96,6 +98,7 @@ function useHomeData() {
     recentFunds,
     recentExpenses,
     totals,
+    events: allEvents,
     upcomingEvents,
     openForms,
     loading,
@@ -250,6 +253,97 @@ function MarqueeRow() {
   )
 }
 
+function WeekStrip({ events }) {
+  const now = useNow(60000)
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+  const todayKey = `${today.getFullYear()}-${today.getMonth()}-${today.getDate()}`
+  const days = Array.from({ length: 7 }, (_, i) => {
+    const d = new Date(today)
+    d.setDate(today.getDate() + i - 3)
+    return d
+  })
+  const byDay = new Map()
+  for (const event of events ?? []) {
+    const d = new Date(event.eventAt)
+    if (Number.isNaN(d.getTime())) continue
+    const key = `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`
+    const list = byDay.get(key) ?? []
+    list.push(event)
+    byDay.set(key, list)
+  }
+  const scrollToEvents = () => {
+    document
+      .getElementById('upcoming-events')
+      ?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }
+  return (
+    <div
+      className="grid grid-cols-7 gap-1.5 sm:gap-2"
+      aria-label="Events across this week"
+    >
+      {days.map((d) => {
+        const key = `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`
+        const dayEvents = byDay.get(key) ?? []
+        const isToday = key === todayKey
+        const isPast = d.getTime() < today.getTime()
+        const base = `flex flex-col items-center rounded-2xl border px-1 py-2.5 sm:py-3 ${
+          isToday
+            ? 'border-gold/60 bg-gold/15 text-white'
+            : dayEvents.length > 0
+              ? 'border-white/15 bg-white/5 text-white hover:bg-white/10'
+              : 'border-white/10 bg-white/5 text-white/50'
+        }`
+        const inner = (
+          <>
+            <span
+              className={`font-display text-[10px] font-semibold tracking-widest uppercase ${
+                isToday ? 'text-gold' : 'text-white/50'
+              }`}
+            >
+              {d.toLocaleDateString('en-IN', { weekday: 'short' })}
+            </span>
+            <span
+              className={`font-display text-lg font-bold tracking-tight tabular-nums sm:text-xl ${
+                isPast ? 'text-white/40' : ''
+              }`}
+            >
+              {d.toLocaleDateString('en-IN', { day: 'numeric' })}
+            </span>
+            <span className="text-[10px] font-semibold tracking-wider uppercase text-white/50">
+              {d.toLocaleDateString('en-IN', { month: 'short' })}
+            </span>
+            {dayEvents.length > 0 ? (
+              <span className="mt-1.5 flex flex-col items-center gap-0.5">
+                <span className="h-1.5 w-1.5 rounded-full bg-gold" />
+                <span className="hidden w-full max-w-[120px] truncate px-1 text-center text-[9px] leading-tight font-medium text-gold/90 sm:block">
+                  {dayEvents
+                    .slice(0, 2)
+                    .map((e) => e.title)
+                    .join(' · ')}
+                </span>
+                {dayEvents.length > 2 ? (
+                  <span className="hidden text-[9px] font-semibold text-gold sm:block">
+                    +{dayEvents.length - 2} more
+                  </span>
+                ) : null}
+              </span>
+            ) : null}
+          </>
+        )
+        return dayEvents.length > 0 ? (
+          <button key={key} type="button" onClick={scrollToEvents} className={base}>
+            {inner}
+          </button>
+        ) : (
+          <div key={key} className={base}>
+            {inner}
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
 function BentoPrayerTimes({ prayerTimes, next, loading }) {
   if (loading) return <LoadingState rows={3} />
   if (!prayerTimes) {
@@ -363,6 +457,7 @@ export default function Home() {
     recentFunds,
     recentExpenses,
     totals,
+    events,
     upcomingEvents,
     openForms,
     loading,
@@ -433,6 +528,9 @@ export default function Home() {
                 <CountdownPanel prayerTimes={prayerTimes} />
               </div>
             ) : null}
+            <div className="mt-6">
+              <WeekStrip events={events} />
+            </div>
           </div>
         </div>
       </section>
@@ -563,7 +661,7 @@ export default function Home() {
       </section>
 
       {upcomingEvents.length > 0 ? (
-        <section className="relative py-24 sm:py-32">
+        <section id="upcoming-events" className="relative py-24 sm:py-32">
           <div className="mx-auto max-w-6xl px-4">
             <div className="mb-14 flex flex-wrap items-end justify-between gap-6">
               <div>
