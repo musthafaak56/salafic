@@ -274,3 +274,47 @@ export function relativeDayLabel(dateStr) {
   if (shown === tomorrow.toISOString().slice(0, 10)) return 'Tomorrow'
   return formatDate(dateStr)
 }
+
+/* ---------- Recurring events ---------- */
+
+// Returns the Date of an event's next occurrence (from `now`). For
+// non-repeating events this is simply the stored eventAt.
+export function nextOccurrence(event, now = new Date()) {
+  const anchor = new Date(event?.eventAt)
+  if (Number.isNaN(anchor.getTime())) return null
+  if (event.repeat !== 'weekly') return anchor
+  const anchorStart = new Date(
+    anchor.getFullYear(),
+    anchor.getMonth(),
+    anchor.getDate()
+  )
+  const anchorTimeOffset = anchor.getTime() - anchorStart.getTime()
+  const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+  const day = anchor.getDay()
+  let next = new Date(todayStart)
+  next.setDate(todayStart.getDate() + ((day - todayStart.getDay() + 7) % 7))
+  if (next.getTime() + anchorTimeOffset <= now.getTime()) {
+    next.setDate(next.getDate() + 7)
+  }
+  if (next.getTime() < anchorStart.getTime()) next = anchorStart
+  return new Date(next.getTime() + anchorTimeOffset)
+}
+
+// Does a weekly event occur on the given calendar day (a local midnight)?
+export function occursOnDay(event, day) {
+  const anchor = new Date(event?.eventAt)
+  if (Number.isNaN(anchor.getTime())) return false
+  if (event.repeat === 'weekly') {
+    const anchorStart = new Date(
+      anchor.getFullYear(),
+      anchor.getMonth(),
+      anchor.getDate()
+    )
+    return anchor.getDay() === day.getDay() && day.getTime() >= anchorStart.getTime()
+  }
+  return (
+    anchor.getFullYear() === day.getFullYear() &&
+    anchor.getMonth() === day.getMonth() &&
+    anchor.getDate() === day.getDate()
+  )
+}

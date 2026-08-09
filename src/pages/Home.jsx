@@ -39,6 +39,8 @@ import {
   relativeDayLabel,
   secondsUntil,
   todayISODate,
+  nextOccurrence,
+  occursOnDay,
 } from '../lib/utils'
 import AppHeader from '../components/AppHeader'
 import LoadingState from '../components/LoadingState'
@@ -78,6 +80,10 @@ function useHomeData() {
         const nowMs = Date.now()
         setUpcomingEvents(
           allEvents
+            .map((e) => ({
+              ...e,
+              eventAt: nextOccurrence(e, new Date(nowMs)).toISOString(),
+            }))
             .filter((e) => new Date(e.eventAt).getTime() >= nowMs)
             .sort((a, b) => new Date(a.eventAt) - new Date(b.eventAt))
             .slice(0, 6)
@@ -267,6 +273,16 @@ function WeekStrip({ events }) {
     const d = new Date(event.eventAt)
     if (Number.isNaN(d.getTime())) continue
     const key = `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`
+    if (event.repeat === 'weekly') {
+      days.forEach((day) => {
+        if (!occursOnDay(event, day)) return
+        const k = `${day.getFullYear()}-${day.getMonth()}-${day.getDate()}`
+        const list = byDay.get(k) ?? []
+        list.push(event)
+        byDay.set(k, list)
+      })
+      continue
+    }
     const list = byDay.get(key) ?? []
     list.push(event)
     byDay.set(key, list)
@@ -698,6 +714,12 @@ export default function Home() {
                       <h3 className="font-display text-lg font-bold leading-snug text-ink">
                         {event.title}
                       </h3>
+                      {event.repeat === 'weekly' ? (
+                        <p className="mt-1 text-xs font-semibold tracking-wide text-gold uppercase">
+                          Repeats every{' '}
+                          {d.toLocaleDateString('en-IN', { weekday: 'long' })}
+                        </p>
+                      ) : null}
                       <p className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs font-medium text-ink-secondary">
                         <span>
                           {d.toLocaleTimeString('en-IN', {

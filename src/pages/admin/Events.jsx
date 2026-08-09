@@ -88,6 +88,7 @@ export default function Events() {
                     </p>
                     <p className="mt-0.5 text-xs text-ink-secondary">
                       {formatEventDate(event.eventAt)}
+                      {event.repeat === 'weekly' ? ' · Repeats every week' : ''}
                       {event.location ? ` · ${event.location}` : ''}
                     </p>
                     {event.description ? (

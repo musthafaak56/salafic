@@ -12,11 +12,16 @@ export default function EventForm({ onSaved, onCancel, initial }) {
   const [title, setTitle] = useState(initial?.title ?? '')
   const [date, setDate] = useState(initial?.eventAt?.slice(0, 10) ?? today())
   const [time, setTime] = useState(initial?.eventAt?.slice(11, 16) ?? '')
+  const [repeat, setRepeat] = useState(initial?.repeat === 'weekly' ? 'weekly' : 'once')
   const [location, setLocation] = useState(initial?.location ?? '')
   const [description, setDescription] = useState(initial?.description ?? '')
   const [success, setSuccess] = useState(false)
   const [error, setError] = useState('')
   const [saving, setSaving] = useState(false)
+
+  const repeatWeekday = repeat === 'weekly' && date
+    ? new Date(`${date}T00:00`).toLocaleDateString('en-IN', { weekday: 'long' })
+    : ''
 
   async function handleSubmit(e) {
     e.preventDefault()
@@ -26,6 +31,7 @@ export default function EventForm({ onSaved, onCancel, initial }) {
     const data = {
       title: title.trim(),
       eventAt: `${date}T${time || '00:00'}`,
+      repeat,
       location: location.trim(),
       description: description.trim(),
       byUid: profile?.uid,
@@ -89,6 +95,25 @@ export default function EventForm({ onSaved, onCancel, initial }) {
           />
         </Field>
       </div>
+      <Field
+        label="Repeats"
+        htmlFor="event-repeat"
+        hint={
+          repeat === 'weekly' && repeatWeekday
+            ? `Repeats every ${repeatWeekday}. The date above is the first occurrence.`
+            : 'How often this event happens.'
+        }
+      >
+        <select
+          id="event-repeat"
+          value={repeat}
+          onChange={(e) => setRepeat(e.target.value)}
+          className={inputClass}
+        >
+          <option value="once">Once</option>
+          <option value="weekly">Every week</option>
+        </select>
+      </Field>
       <Field
         label="Location"
         htmlFor="event-location"
