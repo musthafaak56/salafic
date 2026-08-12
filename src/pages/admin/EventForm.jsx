@@ -10,11 +10,13 @@ export default function EventForm({ onSaved, onCancel, initial }) {
   const { profile } = useAuth()
   const editing = Boolean(initial?.id)
   const [title, setTitle] = useState(initial?.title ?? '')
+  const [titleMl, setTitleMl] = useState(initial?.titleMl ?? '')
   const [date, setDate] = useState(initial?.eventAt?.slice(0, 10) ?? today())
   const [time, setTime] = useState(initial?.eventAt?.slice(11, 16) ?? '')
   const [repeat, setRepeat] = useState(initial?.repeat === 'weekly' ? 'weekly' : 'once')
   const [location, setLocation] = useState(initial?.location ?? '')
   const [description, setDescription] = useState(initial?.description ?? '')
+  const [descriptionMl, setDescriptionMl] = useState(initial?.descriptionMl ?? '')
   const [success, setSuccess] = useState(false)
   const [error, setError] = useState('')
   const [saving, setSaving] = useState(false)
@@ -30,10 +32,12 @@ export default function EventForm({ onSaved, onCancel, initial }) {
     setSaving(true)
     const data = {
       title: title.trim(),
+      titleMl: titleMl.trim(),
       eventAt: `${date}T${time || '00:00'}`,
       repeat,
       location: location.trim(),
       description: description.trim(),
+      descriptionMl: descriptionMl.trim(),
       byUid: profile?.uid,
       byName: profile?.name,
     }
@@ -43,9 +47,11 @@ export default function EventForm({ onSaved, onCancel, initial }) {
       } else {
         await addEvent('main', data)
         setTitle('')
+        setTitleMl('')
         setTime('')
         setLocation('')
         setDescription('')
+        setDescriptionMl('')
       }
       setSuccess(true)
       onSaved?.()
@@ -67,6 +73,21 @@ export default function EventForm({ onSaved, onCancel, initial }) {
           placeholder="e.g. Weekly Qur'an class for children"
           value={title}
           onChange={(e) => setTitle(e.target.value)}
+          className={inputClass}
+        />
+      </Field>
+      <Field
+        label="Title (Malayalam)"
+        htmlFor="event-title-ml"
+        hint="Used on Malayalam posters. Leave empty to use the English title."
+      >
+        <input
+          id="event-title-ml"
+          type="text"
+          maxLength={120}
+          placeholder="ഉദാ. കുട്ടികൾക്കുള്ള ഖുർആൻ ക്ലാസ്"
+          value={titleMl}
+          onChange={(e) => setTitleMl(e.target.value)}
           className={inputClass}
         />
       </Field>
@@ -141,6 +162,21 @@ export default function EventForm({ onSaved, onCancel, initial }) {
           placeholder="What is this event about?"
           value={description}
           onChange={(e) => setDescription(e.target.value)}
+          className={inputClass}
+        />
+      </Field>
+      <Field
+        label="Description (Malayalam)"
+        htmlFor="event-description-ml"
+        hint="Used on Malayalam posters. Leave empty to use the English description."
+      >
+        <textarea
+          id="event-description-ml"
+          rows={3}
+          maxLength={300}
+          placeholder="പരിപാടിയെക്കുറിച്ച്"
+          value={descriptionMl}
+          onChange={(e) => setDescriptionMl(e.target.value)}
           className={inputClass}
         />
       </Field>

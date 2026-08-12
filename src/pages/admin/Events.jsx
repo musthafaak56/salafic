@@ -6,6 +6,7 @@ import SectionHeading from '../../components/SectionHeading'
 import LoadingState from '../../components/LoadingState'
 import EmptyState from '../../components/EmptyState'
 import Button from '../../components/Button'
+import PosterModal from '../../components/PosterModal'
 import EventForm from './EventForm'
 
 function formatEventDate(eventAt) {
@@ -26,6 +27,7 @@ export default function Events() {
   const [loading, setLoading] = useState(true)
   const [editing, setEditing] = useState(null)
   const [deletingId, setDeletingId] = useState(null)
+  const [posterEvent, setPosterEvent] = useState(null)
 
   async function loadData() {
     const list = await getEvents('main', 100)
@@ -101,6 +103,13 @@ export default function Events() {
                     <Button
                       variant="outline"
                       size="sm"
+                      onClick={() => setPosterEvent(event)}
+                    >
+                      Poster
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
                       onClick={() => setEditing(event)}
                     >
                       Edit
@@ -120,6 +129,10 @@ export default function Events() {
           )}
         </Card>
       </section>
+
+      {posterEvent ? (
+        <PosterModal event={posterEvent} onClose={() => setPosterEvent(null)} />
+      ) : null}
     </div>
   )
 }
