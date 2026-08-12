@@ -102,15 +102,41 @@ function drawArabicLine(ctx, line, cx, y, w0, w1) {
   ctx.textAlign = 'center'
 }
 
-// Fits the full Malayalam sentence into up to 4 lines, shrinking when needed.
-function fitMl(ctx, text, maxWidth, maxLines, fontFamily) {
-  for (const size of [40, 34, 30]) {
+// Fits the Malayalam sentence into as many lines as fit the available vertical
+// space, picking the largest size whose wrapped line count stays within the
+// line budget and its total height within availableHeight.
+function fitMl(ctx, text, maxWidth, maxLines, availableHeight, fontFamily) {
+  let best = null
+  for (const size of [44, 40, 38, 36, 34, 32, 30, 28, 26, 24, 22]) {
     ctx.font = `500 ${size}px ${fontFamily}`
     const lines = wrapLines(ctx, text, maxWidth)
-    if (lines.length <= maxLines) return { lines, size, leading: Math.round(size * 1.55) }
+    const leading = Math.round(size * 1.55)
+    if (lines.length <= maxLines && lines.length * leading <= availableHeight) {
+      best = { lines, size, leading }
+      break
+    }
   }
-  ctx.font = `500 30px ${fontFamily}`
-  return { lines: wrapLines(ctx, text, maxWidth), size: 30, leading: 46 }
+  if (best) return best
+  const size = 22
+  ctx.font = `500 ${size}px ${fontFamily}`
+  return { lines: wrapLines(ctx, text, maxWidth), size, leading: Math.round(size * 1.55) }
+}
+
+// Draws text with its ink (glyph) bounding box centered on cx instead of its
+// advance width. Complex-script fonts (Malayalam pre-base vowel signs,
+// chillu/ZWJ clusters) can paint beyond the measured advance, which makes
+// advance-based centering land visually off-center in some browsers.
+// Bounds are measured with textAlign 'left' so the metric's reference point
+// (the alignment point) coincides with the origin in every engine.
+function drawCentered(ctx, text, cx, y) {
+  const prev = ctx.textAlign
+  ctx.textAlign = 'left'
+  const m = ctx.measureText(text)
+  const left = typeof m.actualBoundingBoxLeft === 'number' ? m.actualBoundingBoxLeft : -m.width / 2
+  const right = typeof m.actualBoundingBoxRight === 'number' ? m.actualBoundingBoxRight : m.width / 2
+  const shift = (right - left) / 2
+  ctx.fillText(text, cx - shift, y)
+  ctx.textAlign = prev
 }
 
 // Draws the highlighted word's Malayalam meaning in a rounded gold chip.
@@ -135,7 +161,7 @@ function drawActiveGloss(ctx, text, y, fontFamily) {
   ctx.fill()
   ctx.stroke()
   ctx.fillStyle = GOLD
-  ctx.fillText(text, cx, y)
+  drawCentered(ctx, text, cx, y)
 }
 
 function ornament(ctx, cx, y, spread) {
@@ -225,11 +251,11 @@ function drawSlide(ctx, { surahLabel, surahNumber, ayah, index, total, words, ac
 
   const translationTop = arabicBottom + 168
   const mlText = (ayah.translationMl || ayah.translation || '').replace(/\r\n/g, ' ').trim()
-  const fit = fitMl(ctx, mlText, 800, 4, f.ml)
+  const fit = fitMl(ctx, mlText, 800, 4, 1640 - translationTop - 40, f.ml)
   ctx.font = `500 ${fit.size}px ${f.ml}`
   ctx.fillStyle = 'rgba(247, 244, 239, 0.92)'
   fit.lines.forEach((line, i) => {
-    ctx.fillText(line, W / 2, translationTop + i * fit.leading)
+    drawCentered(ctx, line, W / 2, translationTop + i * fit.leading)
   })
   if (hasWords && words.ml.length > 0) {
     const glossActive = effectiveGloss(words.ml, activeIdx)
