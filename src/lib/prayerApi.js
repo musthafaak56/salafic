@@ -10,6 +10,13 @@ export const CALCULATION_METHODS = [
   { value: '5', label: 'Egyptian General Authority' },
 ]
 
+// The center's fixed location (Salafi Masjid, Cherukunnu, Kerala).
+export const MASJID_LOCATION = {
+  latitude: 11.994908,
+  longitude: 75.300402,
+  label: 'Salafi Masjid, Cherukunnu',
+}
+
 export function getCurrentPosition() {
   return new Promise((resolve, reject) => {
     if (!navigator.geolocation) {

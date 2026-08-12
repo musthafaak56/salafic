@@ -7,7 +7,13 @@ import {
   toMinutes,
   todayISODate,
 } from '../../lib/utils'
-import { CALCULATION_METHODS, fetchPrayerTimes, getCurrentPosition } from '../../lib/prayerApi'
+import {
+  CALCULATION_METHODS,
+  fetchPrayerTimes,
+  getCurrentPosition,
+  MASJID_LOCATION,
+} from '../../lib/prayerApi'
+import { GpsFix, MapPin } from '@phosphor-icons/react'
 import Button from '../../components/Button'
 import Field, { inputClass } from '../../components/Field'
 
@@ -64,7 +70,9 @@ export default function PrayerTimesForm({ onSaved, initialValues }) {
   const [success, setSuccess] = useState(false)
   const [error, setError] = useState('')
   const [saving, setSaving] = useState(false)
-  const [fetching, setFetching] = useState(false)
+  const [fetchingDevice, setFetchingDevice] = useState(false)
+  const [fetchingCenter, setFetchingCenter] = useState(false)
+  const [fetchedFor, setFetchedFor] = useState('')
 
   // The Jumuah card borrows Dhuhr's adhaan (the Jumuah adhaan is the
   // dhuhr adhaan); its iqama stays a fixed manual entry.
@@ -142,11 +150,10 @@ export default function PrayerTimesForm({ onSaved, initialValues }) {
     setValues((v) => withGap(v, mins))
   }
 
-  async function handleFetch() {
+  async function handleFetch(latitude, longitude, label) {
     setError('')
-    setFetching(true)
+    setFetchedFor('')
     try {
-      const { latitude, longitude } = await getCurrentPosition()
       const fetched = await fetchPrayerTimes({ latitude, longitude, date, method })
       if (fetched.sunrise) setSunrise(fetched.sunrise)
       setValues((v) => {
@@ -173,10 +180,32 @@ export default function PrayerTimesForm({ onSaved, initialValues }) {
         }
         return next
       })
+      setFetchedFor(label)
     } catch (err) {
       setError(err.message)
+    }
+  }
+
+  async function handleFetchByDevice() {
+    setFetchingDevice(true)
+    try {
+      const { latitude, longitude } = await getCurrentPosition()
+      await handleFetch(latitude, longitude, 'device location')
     } finally {
-      setFetching(false)
+      setFetchingDevice(false)
+    }
+  }
+
+  async function handleFetchByCenter() {
+    setFetchingCenter(true)
+    try {
+      await handleFetch(
+        MASJID_LOCATION.latitude,
+        MASJID_LOCATION.longitude,
+        MASJID_LOCATION.label
+      )
+    } finally {
+      setFetchingCenter(false)
     }
   }
 
@@ -252,14 +281,35 @@ export default function PrayerTimesForm({ onSaved, initialValues }) {
       </div>
 
       <div className="flex flex-wrap items-end gap-4">
-        <Button
-          type="button"
-          variant="outline"
-          onClick={handleFetch}
-          loading={fetching}
-        >
-          {fetching ? 'Detecting location…' : 'Fetch times by location'}
-        </Button>
+        <div className="flex flex-wrap items-center gap-3">
+          <Button
+            type="button"
+            variant="outline"
+            onClick={handleFetchByDevice}
+            loading={fetchingDevice}
+          >
+            <GpsFix className="h-4 w-4" weight="bold" />
+            {fetchingDevice ? 'Detecting…' : 'Fetch by device location'}
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            onClick={handleFetchByCenter}
+            loading={fetchingCenter}
+          >
+            <MapPin className="h-4 w-4" weight="bold" />
+            {fetchingCenter ? 'Fetching…' : 'Fetch by center location'}
+          </Button>
+          {fetchedFor ? (
+            <span className="text-xs font-medium text-positive">
+              Times fetched for {fetchedFor}.
+            </span>
+          ) : null}
+        </div>
+        <span className="text-xs text-ink-secondary">
+          Center: {MASJID_LOCATION.label} ·{' '}
+          {MASJID_LOCATION.latitude.toFixed(4)}, {MASJID_LOCATION.longitude.toFixed(4)}
+        </span>
         <Field
           label="Apply this gap to all prayers"
           htmlFor="pt-gap"
