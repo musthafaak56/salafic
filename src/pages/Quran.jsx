@@ -5,8 +5,11 @@ import {
   Pause,
   Play,
   Stop,
+  VideoCamera,
 } from '@phosphor-icons/react'
-import { RECITERS, ayahUrl, fetchSurahs } from '../lib/quran'
+import { RECITERS, FONT_PAIRS, ayahUrl, fetchSurahs, fetchSurahTexts } from '../lib/quran'
+import { renderAyahVideo } from '../lib/quranVideo'
+import { loadKaraoke, ayahWords, activeWord, effectiveGloss } from '../lib/karaoke'
 import AppHeader from '../components/AppHeader'
 import LoadingState from '../components/LoadingState'
 
@@ -21,12 +24,35 @@ export default function Quran() {
   const [currentAyah, setCurrentAyah] = useState(null)
   const [playIndex, setPlayIndex] = useState(0)
 
+  const [nowWords, setNowWords] = useState(null)
+  const [activeWordIndex, setActiveWordIndex] = useState(-1)
+
   const [downloading, setDownloading] = useState(false)
   const [progress, setProgress] = useState({ done: 0, total: 0 })
   const [downloadName, setDownloadName] = useState('')
 
+  const [video, setVideo] = useState('idle')
+  const [videoName, setVideoName] = useState('')
+  const [previewUrl, setPreviewUrl] = useState('')
+
+  const [fontPairId, setFontPairId] = useState(
+    () => localStorage.getItem('salafic-font-pair') || FONT_PAIRS[0].id,
+  )
+  const fontPair = FONT_PAIRS.find((p) => p.id === fontPairId) || FONT_PAIRS[0]
+
   const audioRef = useRef(null)
   const playQueueRef = useRef([])
+  const karaokeRef = useRef(null)
+
+  useEffect(
+    () => () => {
+      if (previewUrl) URL.revokeObjectURL(previewUrl)
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [],
+  )
+  const nowAyahRef = useRef(0)
+  const lastActiveRef = useRef(-1)
 
   useEffect(() => {
     fetchSurahs().then(setSurahs)
@@ -42,10 +68,42 @@ export default function Quran() {
     return Array.from({ length: range }, (_, i) => clampedStart + i)
   }
 
+  async function loadNowWords(ayahNumber) {
+    try {
+      if (!karaokeRef.current) {
+        karaokeRef.current = await loadKaraoke(reciter).catch(() => null)
+      }
+      const karaoke = karaokeRef.current
+      if (!karaoke) {
+        setNowWords(null)
+        return
+      }
+      const texts = await fetchSurahTexts(surahNumber)
+      const ayah = texts.ayahs[ayahNumber - 1]
+      if (!ayah) {
+        setNowWords(null)
+        return
+      }
+      const words = ayahWords(
+        karaoke.timings,
+        karaoke.ml,
+        surahNumber,
+        ayah.number,
+        ayah.arabic,
+      )
+      setNowWords(words ? { words, basmala: ayah.basmala } : null)
+    } catch {
+      setNowWords(null)
+    }
+  }
+
   function playRange() {
     playQueueRef.current = ayahList()
     setPlayIndex(0)
     setCurrentAyah(playQueueRef.current[0])
+    lastActiveRef.current = -1
+    setActiveWordIndex(-1)
+    loadNowWords(playQueueRef.current[0])
     const url = ayahUrl(reciter, surahNumber, playQueueRef.current[0])
     if (audioRef.current) {
       audioRef.current.src = url
@@ -60,6 +118,9 @@ export default function Quran() {
     if (next < playQueueRef.current.length) {
       setPlayIndex(next)
       setCurrentAyah(playQueueRef.current[next])
+      lastActiveRef.current = -1
+      setActiveWordIndex(-1)
+      loadNowWords(playQueueRef.current[next])
       if (audioRef.current) {
         audioRef.current.src = ayahUrl(
           reciter,
@@ -73,6 +134,19 @@ export default function Quran() {
     } else {
       setPlaying(false)
       setCurrentAyah(null)
+      setNowWords(null)
+    }
+  }
+
+  function handleTimeUpdate() {
+    if (currentAyah === null || !nowWords || !audioRef.current) return
+    const segs = nowWords.words.segs
+    if (!segs) return
+    const elapsed = audioRef.current.currentTime * 1000
+    const found = activeWord(segs, elapsed)
+    if (found >= 0) lastActiveRef.current = found
+    if (lastActiveRef.current !== activeWordIndex) {
+      setActiveWordIndex(lastActiveRef.current)
     }
   }
 
@@ -85,6 +159,8 @@ export default function Quran() {
     setPlaying(false)
     setCurrentAyah(null)
     setPlayIndex(0)
+    setNowWords(null)
+    setActiveWordIndex(-1)
     playQueueRef.current = []
   }
 
@@ -130,7 +206,79 @@ export default function Quran() {
     }
   }
 
-  const busy = downloading
+  async function downloadVideo() {
+    setVideoName('')
+    setPreviewUrl((old) => {
+      if (old) URL.revokeObjectURL(old)
+      return ''
+    })
+    const AC = window.AudioContext || window.webkitAudioContext
+    if (!AC || !HTMLCanvasElement.prototype.captureStream || typeof MediaRecorder === 'undefined') {
+      window.alert(
+        'Video download is not supported on this browser yet — iPhone/iPad Safari cannot record video. It works in Chrome, and in Safari on a Mac. MP3 works everywhere.',
+      )
+      return
+    }
+    if (playing || currentAyah !== null) stopPlayback()
+    const audio = new AC()
+    audio.resume().catch(() => {})
+    setVideo('fetch')
+    try {
+      const texts = await fetchSurahTexts(surahNumber)
+      const list = ayahList()
+      const ayahs = list.map((n) => texts.ayahs[n - 1]).filter(Boolean)
+      if (ayahs.length !== list.length) throw new Error('Could not fetch ayah text')
+      if (!window.confirm(`Record a video of ${list.length} ayah${list.length === 1 ? '' : 's'} (${texts.englishName}, ${reciter})?`)) {
+        return
+      }
+      setVideo('render')
+      await Promise.all(
+        ['400', '500', '600', '700'].flatMap((w) => [
+          document.fonts.load(`${w} 76px ${fontPair.ar}`),
+          document.fonts.load(`${w} 40px ${fontPair.ml}`),
+        ]),
+      ).catch(() => {})
+      const { blob, ext } = await renderAyahVideo({
+        surahNumber,
+        surahLabel: texts.englishName.toUpperCase(),
+        ayahs,
+        reciter,
+        audio,
+        fonts: { ar: fontPair.ar, ml: fontPair.ml },
+        onProgress: ({ phase, done }) => setProgress({ done, total: phase === 'render' ? 1 : ayahs.length }),
+      })
+      const name = `${(texts.englishName || `Surah ${surahNumber}`).replace(/[^A-Za-z0-9-]+/g, '_')}_${clampedStart}-${clampedEnd}_${reciter}.${ext}`
+      setVideoName(name)
+      setPreviewUrl(URL.createObjectURL(blob))
+    } catch (err) {
+      setVideoName('')
+      const msg =
+        err?.message === 'too-long'
+          ? 'This range is too long for a video (max ~15 minutes). Pick fewer ayahs or use the MP3 download.'
+          : err?.message === 'no-support' || err?.message === 'no-mime'
+            ? 'Video download is not supported on this browser yet — iPhone/iPad Safari cannot record video. It works in Chrome, and in Safari on a Mac. MP3 works everywhere.'
+            : err?.message === 'audio-blocked'
+              ? 'Your browser blocked the audio needed for recording. Unmute this tab and tap Download Video again — it must start from your tap, so do not switch away while the clips load.'
+              : err?.message === 'recording-error'
+                ? 'Recording failed. Please try again.'
+                : `Video failed: ${err.message}`
+      window.alert(msg)
+    } finally {
+      setVideo('idle')
+    }
+  }
+
+  function saveVideo() {
+    if (!previewUrl || !videoName) return
+    const a = document.createElement('a')
+    a.href = previewUrl
+    a.download = videoName
+    document.body.appendChild(a)
+    a.click()
+    a.remove()
+  }
+
+  const busy = downloading || video !== 'idle'
 
   return (
     <main className="w-full max-w-full overflow-x-hidden bg-canvas text-ink">
@@ -146,7 +294,8 @@ export default function Quran() {
           </h1>
           <p className="mt-4 max-w-2xl text-base leading-relaxed text-ink-secondary">
             Choose a reciter, a surah, and an ayah range. Play it here, or
-            download the exact range as a single MP3 file.
+            download the exact range as a single MP3 — or as a shareable video
+            with the Arabic text and Malayalam translation.
           </p>
 
           {!surahs ? (
@@ -229,6 +378,36 @@ export default function Quran() {
           )}
 
           {surahs ? (
+            <div className="mt-6 flex flex-wrap items-center gap-3">
+              <span className="text-xs font-semibold tracking-wider text-ink-secondary uppercase">
+                Fonts
+              </span>
+              {FONT_PAIRS.map((p) => (
+                <button
+                  key={p.id}
+                  type="button"
+                  onClick={() => {
+                    setFontPairId(p.id)
+                    localStorage.setItem('salafic-font-pair', p.id)
+                  }}
+                  className={`inline-flex h-12 items-center gap-3 rounded-full border px-4 text-sm transition-colors duration-200 ${
+                    fontPair.id === p.id
+                      ? 'border-gold bg-gold/10 text-ink'
+                      : 'border-line bg-surface text-ink-secondary hover:bg-surface-subtle'
+                  }`}
+                >
+                  <span dir="rtl" className="text-lg leading-none" style={{ fontFamily: p.ar }}>
+                    بسم الله
+                  </span>
+                  <span className="text-lg leading-none" style={{ fontFamily: p.ml }}>
+                    ഖുർആൻ
+                  </span>
+                </button>
+              ))}
+            </div>
+          ) : null}
+
+          {surahs ? (
             <div className="mt-8 flex flex-wrap items-center gap-3">
               <button
                 type="button"
@@ -265,26 +444,94 @@ export default function Quran() {
                   ? `Fetching ${progress.done}/${progress.total}…`
                   : 'Download MP3'}
               </button>
+              <button
+                type="button"
+                onClick={downloadVideo}
+                disabled={busy}
+                className="inline-flex h-12 items-center gap-2 rounded-full border border-gold/60 bg-surface px-6 font-display text-sm font-bold text-gold transition-transform duration-500 ease-out hover:scale-105 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                <VideoCamera className="h-4 w-4" weight="bold" />
+                {video === 'fetch'
+                  ? `Fetching ${progress.done}/${progress.total}…`
+                  : video === 'render'
+                    ? 'Recording…'
+                    : 'Download Video'}
+              </button>
             </div>
           ) : null}
 
-          {downloading ? (
+          {downloading || video !== 'idle' ? (
             <div className="mt-6">
               <div className="h-2 w-full overflow-hidden rounded-full bg-surface-subtle">
                 <div
-                  className="h-full rounded-full bg-gold transition-[width] duration-200"
-                  style={{ width: `${(progress.done / progress.total) * 100}%` }}
+                  className={`h-full rounded-full bg-gold transition-[width] duration-200 ${
+                    video === 'render' ? 'animate-pulse' : ''
+                  }`}
+                  style={{
+                    width:
+                      video === 'render'
+                        ? '100%'
+                        : `${(progress.done / Math.max(1, progress.total)) * 100}%`,
+                  }}
                 />
               </div>
+              {video === 'render' ? (
+                <p className="mt-2 text-sm text-ink-secondary">
+                  Recording video in real time — keep this tab visible. This takes as long as
+                  the recitation itself.
+                </p>
+              ) : null}
             </div>
           ) : null}
 
           {downloadName ? (
             <p className="mt-5 text-sm text-ink-secondary">
               Downloaded{' '}
-              <span className="font-medium text-ink">{downloadName}</span> — {range}{' '}
-              ayah{range === 1 ? '' : 's'} ({surah?.englishName}, {reciter}).
+              <span className="font-medium text-ink">{downloadName}</span> — {range} ayah
+              {range === 1 ? '' : 's'} ({surah?.englishName}, {reciter}).
             </p>
+          ) : null}
+
+          {videoName && previewUrl ? (
+            <div className="mt-8">
+              <p className="text-xs font-semibold tracking-wider text-gold uppercase">
+                Video ready — preview it, then download
+              </p>
+              <div className="mx-auto mt-4 w-full max-w-sm">
+                <video
+                  src={previewUrl}
+                  controls
+                  playsInline
+                  preload="metadata"
+                  className="aspect-[9/16] w-full rounded-2xl border border-line bg-black"
+                />
+              </div>
+              <div className="mt-5 flex flex-wrap items-center justify-center gap-3">
+                <button
+                  type="button"
+                  onClick={saveVideo}
+                  className="inline-flex h-12 items-center gap-2 rounded-full bg-gold px-6 font-display text-sm font-bold text-deep transition-transform duration-500 ease-out hover:scale-105"
+                >
+                  <DownloadSimple className="h-4 w-4" weight="bold" />
+                  Download {videoName.replace(/\.[^.]+$/, '')} ({range} ayah
+                  {range === 1 ? '' : 's'})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setVideoName('')
+                    setPreviewUrl((old) => {
+                      if (old) URL.revokeObjectURL(old)
+                      return ''
+                    })
+                  }}
+                  className="inline-flex h-12 items-center gap-2 rounded-full border border-line bg-surface px-5 text-sm font-medium text-ink transition-colors duration-200 hover:bg-surface-subtle"
+                >
+                  <ArrowClockwise className="h-4 w-4" />
+                  Record again
+                </button>
+              </div>
+            </div>
           ) : null}
 
           {playing && currentAyah !== null ? (
@@ -304,6 +551,67 @@ export default function Quran() {
               </button>
             </p>
           ) : null}
+
+          {playing && currentAyah !== null && nowWords ? (
+            <div className="mt-6 rounded-2xl border border-line bg-surface p-5 text-center sm:p-7">
+              <p className="text-xs font-semibold tracking-wider text-gold uppercase">
+                Now playing · {surahNumber}:{currentAyah}
+              </p>
+              <div className="mt-4">
+                {nowWords.basmala ? (
+                  <p
+                    dir="rtl"
+                    style={{ fontFamily: fontPair.ar }}
+                    className="mb-3 font-arabic text-lg text-gold sm:text-xl"
+                  >
+                    بِسْمِ ٱللَّهِ ٱلرَّحْمَٰنِ ٱلرَّحِيمِ
+                  </p>
+                ) : null}
+                <p
+                  dir="rtl"
+                  style={{ fontFamily: fontPair.ar }}
+                  className="font-arabic text-2xl leading-[2.2] text-ink sm:text-3xl sm:leading-[2.2]"
+                >
+                  {nowWords.words.ar.map((word, i) => {
+                    const seg = nowWords.words.segs[activeWordIndex]
+                    const active = seg && i >= seg[0] && i < seg[1]
+                    return (
+                      <span
+                        key={i}
+                        className={`inline-block transition-colors duration-200 ${
+                          active ? 'text-gold' : ''
+                        }`}
+                      >
+                        {word}
+                        {i < nowWords.words.ar.length - 1 ? '\u00A0' : ''}
+                      </span>
+                    )
+                  })}
+                </p>
+                <p
+                  style={{ fontFamily: fontPair.ml }}
+                  className="mt-4 font-malayalam text-xl leading-relaxed text-ink-secondary sm:text-2xl"
+                >
+                  {nowWords.words.ml.map((gloss, i) => {
+                    const text = gloss.replace(/\r\n/g, ' ').trim()
+                    if (!text || text === '*') return null
+                    const active = effectiveGloss(nowWords.words.ml, activeWordIndex) === i
+                    return (
+                      <span
+                        key={i}
+                        className={`inline-block transition-colors duration-200 ${
+                          active ? 'font-semibold text-gold' : ''
+                        }`}
+                      >
+                        {text}
+                        {'\u00A0'}
+                      </span>
+                    )
+                  })}
+                </p>
+              </div>
+            </div>
+          ) : null}
         </div>
       </section>
 
@@ -313,6 +621,7 @@ export default function Quran() {
         onPlay={() => setPlaying(true)}
         onPause={() => setPlaying(false)}
         onEnded={handleEnded}
+        onTimeUpdate={handleTimeUpdate}
       />
     </main>
   )

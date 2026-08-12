@@ -5,6 +5,29 @@ export const RECITERS = [
   { id: 'Shatri', label: 'Abu Bakr ash-Shatri' },
 ]
 
+// Selectable font pairs for the recited-word view and video.
+// ar/ml are CSS font-family stacks; canvas uses the same names.
+export const FONT_PAIRS = [
+  {
+    id: 'naskh',
+    label: 'Noto Naskh',
+    ar: '"Noto Naskh Arabic"',
+    ml: '"Noto Sans Malayalam"',
+  },
+  {
+    id: 'amiri',
+    label: 'Amiri',
+    ar: '"Amiri"',
+    ml: '"Noto Serif Malayalam"',
+  },
+  {
+    id: 'scheherazade',
+    label: 'Scheherazade New',
+    ar: '"Scheherazade New"',
+    ml: '"Manjari"',
+  },
+]
+
 const SURAHS_KEY = 'salafic-quran-surahs'
 const SURAHS_TTL = 7 * 24 * 60 * 60 * 1000
 
@@ -80,4 +103,65 @@ export async function fetchSurahs() {
   } catch {
     return fallbackSurahs()
   }
+}
+
+const SURAH_TEXT_CACHE = new Map()
+
+// The Uthmani edition glues the Basmala onto ayah 1 of every surah (except
+// Al-Fatiha and At-Tawba). Split it off so it renders as its own line.
+// Built from verified codepoints — the API writes combining marks in the
+// order shadda-then-vowel, which a hand-typed literal gets wrong.
+const BASMALA_WORDS = [
+  [0x628, 0x650, 0x633, 0x652, 0x645, 0x650],
+  [0x671, 0x644, 0x644, 0x651, 0x64e, 0x647, 0x650],
+  [
+    0x671, 0x644, 0x631, 0x651, 0x64e, 0x62d, 0x652, 0x645, 0x64e, 0x670,
+    0x646, 0x650,
+  ],
+  [0x671, 0x644, 0x631, 0x651, 0x64e, 0x62d, 0x650, 0x64a, 0x645, 0x650],
+]
+// The first word may carry a shadda on the ب (some editions write بِّسْمِ).
+const BASMALA_WORDS_RE = BASMALA_WORDS.map((w, i) =>
+  i === 0
+    ? `${String.fromCodePoint(0x628)}[\\u0651]?${w.slice(1).map((c) => String.fromCodePoint(c)).join('')}`
+    : String.fromCodePoint(...w)
+)
+const BASMALA_RE = new RegExp(`^${BASMALA_WORDS_RE.join('\\s+')}\\s+`)
+
+// Arabic (Uthmani script) + English (Sahih International) + Malayalam
+// (Cheriyamundam Abdul Hameed & Kunhi Mohammed Parappoor) text for a whole
+// surah, cached in memory for the session.
+export async function fetchSurahTexts(surahNumber) {
+  const hit = SURAH_TEXT_CACHE.get(surahNumber)
+  if (hit) return hit
+  const res = await fetch(
+    `https://api.alquran.cloud/v1/surah/${surahNumber}/editions/quran-uthmani,en.sahih,ml.abdulhameed`
+  )
+  if (!res.ok) throw new Error(`Could not fetch surah ${surahNumber} text`)
+  const editions = (await res.json()).data
+  const [arabic, english, malayalam] = editions
+  const data = {
+    arabicName: arabic.name,
+    englishName: arabic.englishName,
+    ayahs: arabic.ayahs.map((a, i) => {
+      let text = a.text
+      let basmala = false
+      if (i === 0 && surahNumber !== 1) {
+        const m = text.match(BASMALA_RE)
+        if (m && text.length > m[0].length) {
+          basmala = true
+          text = text.slice(m[0].length)
+        }
+      }
+      return {
+        number: a.numberInSurah,
+        arabic: text,
+        basmala,
+        translation: english.ayahs[i]?.text ?? '',
+        translationMl: malayalam?.ayahs[i]?.text ?? '',
+      }
+    }),
+  }
+  SURAH_TEXT_CACHE.set(surahNumber, data)
+  return data
 }
