@@ -45,6 +45,7 @@ import {
 import AppHeader from '../components/AppHeader'
 import LoadingState from '../components/LoadingState'
 import EmptyState from '../components/EmptyState'
+import MonthView from '../components/MonthView'
 
 function useHomeData() {
   const [prayerTimes, setPrayerTimes] = useState(null)
@@ -546,6 +547,7 @@ export default function Home() {
             ) : null}
             <div className="mt-6">
               <WeekStrip events={events} />
+              <MonthView events={events} />
             </div>
           </div>
         </div>
