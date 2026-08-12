@@ -245,6 +245,7 @@ export default function Quran() {
         surahLabel: texts.englishName.toUpperCase(),
         ayahs,
         reciter,
+        reciterLabel: RECITERS.find((r) => r.id === reciter)?.label,
         audio,
         fonts: { ar: fontPair.ar, ml: fontPair.ml },
         onProgress: ({ phase, done }) => setProgress({ done, total: phase === 'render' ? 1 : ayahs.length }),

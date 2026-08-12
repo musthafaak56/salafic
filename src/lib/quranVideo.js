@@ -157,7 +157,7 @@ function ornament(ctx, cx, y, spread) {
   ctx.fill()
 }
 
-function drawSlide(ctx, { surahLabel, surahNumber, ayah, index, total, words, active, fonts }) {
+function drawSlide(ctx, { surahLabel, surahNumber, ayah, index, total, words, active, fonts, reciterLabel }) {
   const f = fonts || DEFAULT_FONTS
   ctx.fillStyle = NAVY
   ctx.fillRect(0, 0, W, H)
@@ -249,6 +249,14 @@ function drawSlide(ctx, { surahLabel, surahNumber, ayah, index, total, words, ac
   } catch {}
   ctx.fillStyle = 'rgba(194, 147, 60, 0.8)'
   ctx.fillText('SALAFI CENTER CHERUKUNNU', W / 2, 1706)
+
+  if (reciterLabel) {
+    try {
+      ctx.letterSpacing = '3px'
+    } catch {}
+    ctx.font = '500 17px "Satoshi"'
+    ctx.fillText(reciterLabel.toUpperCase(), W / 2, 1750)
+  }
 }
 
 async function ensureAudioRunning(audio) {
@@ -269,7 +277,7 @@ async function ensureAudioRunning(audio) {
 
 // Records a real-time slideshow of the selected ayahs (Arabic + translation)
 // over their recited audio. Returns a playable WebM/MP4 blob.
-export async function renderAyahVideo({ surahNumber, surahLabel, ayahs, reciter, onProgress, audio, fonts }) {
+export async function renderAyahVideo({ surahNumber, surahLabel, ayahs, reciter, reciterLabel, onProgress, audio, fonts }) {
   if (typeof MediaRecorder === 'undefined' || !HTMLCanvasElement.prototype.captureStream) {
     throw new Error('no-support')
   }
@@ -412,6 +420,7 @@ export async function renderAyahVideo({ surahNumber, surahLabel, ayahs, reciter,
           words: slide.words,
           active: lastActive,
           fonts,
+          reciterLabel,
         })
         onProgress?.({ phase: 'render', done: Math.min(1, elapsed / totalDur) })
         raf = requestAnimationFrame(frame)
