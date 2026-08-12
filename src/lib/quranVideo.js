@@ -1,4 +1,4 @@
-import { ayahUrl } from './quran'
+import { ayahUrl, surahAudioUrl, surahMode } from './quran'
 import { FONT_PAIRS } from './quran'
 import { loadKaraoke, ayahWords, activeWord, effectiveGloss } from './karaoke'
 
@@ -292,62 +292,118 @@ export async function renderAyahVideo({ surahNumber, surahLabel, ayahs, reciter,
 
   onProgress?.({ phase: 'fetch', done: 0, total: ayahs.length })
   const karaokeP = loadKaraoke(reciter).catch(() => null)
-  const raw = []
-  for (let i = 0; i < ayahs.length; i++) {
-    const res = await fetch(ayahUrl(reciter, surahNumber, ayahs[i].number))
-    if (!res.ok) throw new Error(`Could not fetch ayah ${ayahs[i].number}`)
-    raw.push(await res.arrayBuffer())
-    onProgress?.({ phase: 'fetch', done: i + 1, total: ayahs.length })
+  const surahAud = surahMode(reciter)
+  let raw = []
+  if (!surahAud) {
+    for (let i = 0; i < ayahs.length; i++) {
+      const res = await fetch(ayahUrl(reciter, surahNumber, ayahs[i].number))
+      if (!res.ok) throw new Error(`Could not fetch ayah ${ayahs[i].number}`)
+      raw.push(await res.arrayBuffer())
+      onProgress?.({ phase: 'fetch', done: i + 1, total: ayahs.length })
+    }
   }
 
   try {
-    const [karaoke, decoded] = await Promise.all([
-      karaokeP,
-      (async () => {
-        const decoded = []
-        for (const data of raw) {
-          const buf = await new Promise((resolve, reject) => {
-            audio.decodeAudioData(data.slice(0), resolve, reject)
-          })
-          decoded.push(buf)
-        }
-        return decoded
-      })(),
-    ])
-
-    const seconds =
-      decoded.reduce((sum, b) => sum + b.duration, 0) + PAD * (decoded.length - 1) + TAIL
-    if (seconds > MAX_SECONDS) throw new Error('too-long')
-
-    const canvas = document.createElement('canvas')
-    canvas.width = W
-    canvas.height = H
-    const ctx = canvas.getContext('2d')
+    const karaoke = await karaokeP
+    const total = ayahs.length
+    const slides = []
+    let play = null
+    let t = audio.currentTime + 0.3
 
     const dest = audio.createMediaStreamDestination()
     const master = audio.createGain()
     master.connect(dest)
     master.connect(audio.destination)
 
-    const total = ayahs.length
-    const slides = []
-    let t = audio.currentTime + 0.3
-    for (let i = 0; i < decoded.length; i++) {
-      const ayah = ayahs[i]
-      slides.push({
-        start: t,
-        ayah,
-        words: karaoke
+    if (surahAud) {
+      // Whole-surah audio: no decode; play each ayah window via an <audio> element.
+      const windows = ayahs.map((ayah, i) => {
+        const w = karaoke
           ? ayahWords(karaoke.timings, karaoke.ml, surahNumber, ayah.number, ayah.arabic)
-          : null,
+          : null
+        if (!w || typeof w.startMs !== 'number' || typeof w.endMs !== 'number') {
+          throw new Error(`No timing window for ${surahNumber}:${ayah.number}`)
+        }
+        return { words: w, start: w.startMs / 1000, dur: (w.endMs - w.startMs) / 1000 }
       })
-      const src = audio.createBufferSource()
-      src.buffer = decoded[i]
-      src.connect(master)
-      src.start(t)
-      t += decoded[i].duration + PAD
+      const sum = windows.reduce((acc, w) => acc + w.dur, 0)
+      if (sum + PAD * (total - 1) + TAIL > MAX_SECONDS) throw new Error('too-long')
+
+      const el = new Audio()
+      el.preload = 'auto'
+      el.src = surahAudioUrl(reciter, surahNumber)
+      await new Promise((resolve, reject) => {
+        const ok = () => {
+          el.removeEventListener('loadedmetadata', ok)
+          resolve()
+        }
+        const fail = () => {
+          el.removeEventListener('error', fail)
+          reject(new Error(`Could not load surah ${surahNumber} audio`))
+        }
+        el.addEventListener('loadedmetadata', ok)
+        el.addEventListener('error', fail)
+      })
+      audio.createMediaElementSource(el).connect(master)
+      play = {
+        seek(i) {
+          el.currentTime = windows[i].start
+        },
+        start() {
+          el.currentTime = windows[0].start
+          el.play().catch(() => {})
+        },
+        stop() {
+          el.pause()
+        },
+      }
+
+      t = audio.currentTime + 0.3
+      for (let i = 0; i < total; i++) {
+        slides.push({ start: t, ayah: ayahs[i], words: windows[i].words })
+        t += windows[i].dur + PAD
+      }
+    } else {
+      const [decoded] = await Promise.all([
+        (async () => {
+          const decoded = []
+          for (const data of raw) {
+            const buf = await new Promise((resolve, reject) => {
+              audio.decodeAudioData(data.slice(0), resolve, reject)
+            })
+            decoded.push(buf)
+          }
+          return decoded
+        })(),
+      ])
+
+      const seconds =
+        decoded.reduce((sum, b) => sum + b.duration, 0) + PAD * (decoded.length - 1) + TAIL
+      if (seconds > MAX_SECONDS) throw new Error('too-long')
+
+      t = audio.currentTime + 0.3
+      for (let i = 0; i < total; i++) {
+        const ayah = ayahs[i]
+        slides.push({
+          start: t,
+          ayah,
+          words: karaoke
+            ? ayahWords(karaoke.timings, karaoke.ml, surahNumber, ayah.number, ayah.arabic)
+            : null,
+        })
+        const src = audio.createBufferSource()
+        src.buffer = decoded[i]
+        src.connect(master)
+        src.start(t)
+        t += decoded[i].duration + PAD
+      }
     }
     const totalDur = t - audio.currentTime + TAIL
+
+    const canvas = document.createElement('canvas')
+    canvas.width = W
+    canvas.height = H
+    const ctx = canvas.getContext('2d')
 
     const stream = canvas.captureStream(30)
     stream.addTrack(dest.stream.getAudioTracks()[0])
@@ -369,6 +425,7 @@ export async function renderAyahVideo({ surahNumber, surahLabel, ayahs, reciter,
     })
 
     const t0 = audio.currentTime
+    play?.start()
     recorder.start(250)
     await new Promise((resolve, reject) => {
       let raf = 0
@@ -382,6 +439,7 @@ export async function renderAyahVideo({ surahNumber, surahLabel, ayahs, reciter,
         lastElapsed = elapsed
         if (stalledFrames > 150 && elapsed < totalDur - 1) {
           cancelAnimationFrame(raf)
+          play?.stop()
           try {
             recorder.stop()
           } catch {}
@@ -390,6 +448,7 @@ export async function renderAyahVideo({ surahNumber, surahLabel, ayahs, reciter,
         }
         if (elapsed >= totalDur) {
           cancelAnimationFrame(raf)
+          play?.stop()
           try {
             recorder.stop()
           } catch {}
@@ -403,6 +462,7 @@ export async function renderAyahVideo({ surahNumber, surahLabel, ayahs, reciter,
         if (slide !== curSlide) {
           curSlide = slide
           lastActive = -1
+          if (play) play.seek(slides.indexOf(slide))
         }
         if (slide.words) {
           const ayahElapsed = (elapsed - (slide.start - t0)) * 1000

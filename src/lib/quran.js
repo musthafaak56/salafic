@@ -3,7 +3,15 @@ export const RECITERS = [
   { id: 'Sudais', label: 'Abdur-Rahman as-Sudais' },
   { id: 'Shuraym', label: 'Sa‘ud ash-Shuraym' },
   { id: 'Shatri', label: 'Abu Bakr ash-Shatri' },
+  { id: 'Dukhain', label: 'Haitham Al-Dukhain' },
 ]
+
+// Reciters whose audio is served as one file per surah instead of one file
+// per ayah (like the other four). Playback seeks within the surah file using
+// the ayah windows stored in the timing data.
+export function surahMode(reciter) {
+  return reciter === 'Dukhain'
+}
 
 // Selectable font pairs for the recited-word view and video.
 // ar/ml are CSS font-family stacks; canvas uses the same names.
@@ -61,6 +69,16 @@ export function ayahUrl(reciter, surah, ayah) {
   const s = String(surah).padStart(3, '0')
   const a = String(ayah).padStart(3, '0')
   return `https://verses.quran.com/${reciter}/mp3/${s}${a}.mp3`
+}
+
+// Whole-surah audio URL. Per-ayah URLs do not exist for this reciter.
+const DUKHAIN_BASE = 'https://server16.mp3quran.net/h_dukhain/Rewayat-Hafs-A-n-Assem'
+
+export function surahAudioUrl(reciter, surah) {
+  if (reciter === 'Dukhain') {
+    return `${DUKHAIN_BASE}/${String(surah).padStart(3, '0')}.mp3`
+  }
+  return null
 }
 
 export function fallbackSurahs() {

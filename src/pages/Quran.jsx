@@ -7,7 +7,15 @@ import {
   Stop,
   VideoCamera,
 } from '@phosphor-icons/react'
-import { RECITERS, FONT_PAIRS, ayahUrl, fetchSurahs, fetchSurahTexts } from '../lib/quran'
+import {
+  RECITERS,
+  FONT_PAIRS,
+  ayahUrl,
+  surahAudioUrl,
+  surahMode,
+  fetchSurahs,
+  fetchSurahTexts,
+} from '../lib/quran'
 import { renderAyahVideo } from '../lib/quranVideo'
 import { loadKaraoke, ayahWords, activeWord, effectiveGloss } from '../lib/karaoke'
 import AppHeader from '../components/AppHeader'
@@ -43,6 +51,8 @@ export default function Quran() {
   const audioRef = useRef(null)
   const playQueueRef = useRef([])
   const karaokeRef = useRef(null)
+  const advancingRef = useRef(false)
+  const nowWordRef = useRef(null)
 
   useEffect(
     () => () => {
@@ -76,12 +86,14 @@ export default function Quran() {
       const karaoke = karaokeRef.current
       if (!karaoke) {
         setNowWords(null)
+        nowWordRef.current = null
         return
       }
       const texts = await fetchSurahTexts(surahNumber)
       const ayah = texts.ayahs[ayahNumber - 1]
       if (!ayah) {
         setNowWords(null)
+        nowWordRef.current = null
         return
       }
       const words = ayahWords(
@@ -91,62 +103,144 @@ export default function Quran() {
         ayah.number,
         ayah.arabic,
       )
-      setNowWords(
-        words ? { words, basmala: ayah.basmala, translation: ayah.translationMl || ayah.translation || '' } : null,
-      )
+      const bundle = words
+        ? { words, basmala: ayah.basmala, translation: ayah.translationMl || ayah.translation || '' }
+        : null
+      nowWordRef.current = bundle
+      setNowWords(bundle)
     } catch {
       setNowWords(null)
+      nowWordRef.current = null
     }
   }
 
-  function playRange() {
+  // Waits until the element has duration metadata (needed before seeking).
+  function waitForMetadata(el) {
+    if (el.readyState >= 1) return Promise.resolve()
+    return new Promise((resolve) => {
+      const done = () => {
+        el.removeEventListener('loadedmetadata', done)
+        resolve()
+      }
+      el.addEventListener('loadedmetadata', done)
+    })
+  }
+
+  // Positions the audio element at the start of an ayah inside the surah file
+  // (surah mode) using the ayah window from the timing data.
+  function seekToWordStart(el, bundle) {
+    const start = bundle?.words?.startMs
+    if (typeof start !== 'number') return
+    try {
+      el.currentTime = start / 1000
+    } catch {}
+  }
+
+  async function playRange() {
     playQueueRef.current = ayahList()
     setPlayIndex(0)
     setCurrentAyah(playQueueRef.current[0])
     lastActiveRef.current = -1
     setActiveWordIndex(-1)
-    loadNowWords(playQueueRef.current[0])
-    const url = ayahUrl(reciter, surahNumber, playQueueRef.current[0])
-    if (audioRef.current) {
-      audioRef.current.src = url
-      audioRef.current.play().catch(() => {
+    const el = audioRef.current
+    if (!el) return
+    await loadNowWords(playQueueRef.current[0])
+    if (surahMode(reciter)) {
+      // Whole-surah audio: point the element at the surah file once; each
+      // ayah plays from its window inside it.
+      const surahUrl = surahAudioUrl(reciter, surahNumber)
+      if (el.getAttribute('data-src') !== surahUrl) {
+        el.src = surahUrl
+        el.setAttribute('data-src', surahUrl)
+      }
+      try {
+        await waitForMetadata(el)
+        seekToWordStart(el, nowWordRef.current)
+      } catch {}
+      el.play().catch(() => {
+        setPlaying(false)
+      })
+    } else {
+      const url = ayahUrl(reciter, surahNumber, playQueueRef.current[0])
+      el.src = url
+      el.play().catch(() => {
         setPlaying(false)
       })
     }
   }
 
-  function handleEnded() {
-    const next = playIndex + 1
-    if (next < playQueueRef.current.length) {
-      setPlayIndex(next)
-      setCurrentAyah(playQueueRef.current[next])
-      lastActiveRef.current = -1
-      setActiveWordIndex(-1)
-      loadNowWords(playQueueRef.current[next])
-      if (audioRef.current) {
-        audioRef.current.src = ayahUrl(
-          reciter,
-          surahNumber,
-          playQueueRef.current[next],
-        )
-        audioRef.current.play().catch(() => {
-          setPlaying(false)
-        })
+  async function handleEnded() {
+    if (advancingRef.current) return
+    advancingRef.current = true
+    try {
+      const next = playIndex + 1
+      if (next < playQueueRef.current.length) {
+        setPlayIndex(next)
+        setCurrentAyah(playQueueRef.current[next])
+        lastActiveRef.current = -1
+        setActiveWordIndex(-1)
+        if (surahMode(reciter)) {
+          // Keep the same surah file open; hold at the window end while the
+          // next ayah's words load, then move to its window.
+          audioRef.current?.pause()
+          await loadNowWords(playQueueRef.current[next])
+          if (audioRef.current) {
+            seekToWordStart(audioRef.current, nowWordRef.current)
+            audioRef.current.play().catch(() => {
+              setPlaying(false)
+            })
+          }
+        } else {
+          loadNowWords(playQueueRef.current[next])
+          if (audioRef.current) {
+            audioRef.current.src = ayahUrl(
+              reciter,
+              surahNumber,
+              playQueueRef.current[next],
+            )
+            audioRef.current.play().catch(() => {
+              setPlaying(false)
+            })
+          }
+        }
+      } else {
+        audioRef.current?.pause()
+        setPlaying(false)
+        setCurrentAyah(null)
+        setNowWords(null)
+        nowWordRef.current = null
       }
-    } else {
-      setPlaying(false)
-      setCurrentAyah(null)
-      setNowWords(null)
+    } finally {
+      advancingRef.current = false
     }
   }
 
   function handleTimeUpdate() {
-    if (currentAyah === null || !nowWords || !audioRef.current) return
-    const segs = nowWords.words.segs
+    if (currentAyah === null || !audioRef.current) return
+    const bundle = nowWordRef.current
+    const segs = bundle?.words?.segs
     if (!segs) return
-    const elapsed = audioRef.current.currentTime * 1000
-    const found = activeWord(segs, elapsed)
-    if (found >= 0) lastActiveRef.current = found
+    // In surah mode the element's clock is the whole surah; the elapsed time
+    // within the ayah is offset by its window start. The audio also advances
+    // past the ayah window on its own (continuous file), so advance to the
+    // next ayah once the window's end is reached.
+    const start = bundle.words.startMs
+    const end = bundle.words.endMs
+    const t = audioRef.current.currentTime * 1000
+    if (typeof start === 'number' && typeof end === 'number') {
+      if (t >= end - 40 && !advancingRef.current) {
+        // handleEnded sets advancingRef while it loads the next ayah's words.
+        requestAnimationFrame(() => handleEnded())
+        return
+      }
+      const elapsed = t - start
+      const found = activeWord(segs, elapsed)
+      if (found >= 0) lastActiveRef.current = found
+    } else {
+      const elapsed = t
+      const found = activeWord(segs, elapsed)
+      if (found >= 0) lastActiveRef.current = found
+    }
     if (lastActiveRef.current !== activeWordIndex) {
       setActiveWordIndex(lastActiveRef.current)
     }
@@ -156,12 +250,14 @@ export default function Quran() {
     if (audioRef.current) {
       audioRef.current.pause()
       audioRef.current.removeAttribute('src')
+      audioRef.current.removeAttribute('data-src')
       audioRef.current.load()
     }
     setPlaying(false)
     setCurrentAyah(null)
     setPlayIndex(0)
     setNowWords(null)
+    nowWordRef.current = null
     setActiveWordIndex(-1)
     playQueueRef.current = []
   }
@@ -180,8 +276,26 @@ export default function Quran() {
   async function downloadRange() {
     const list = ayahList()
     setDownloading(true)
-    setProgress({ done: 0, total: list.length })
     try {
+      if (surahMode(reciter)) {
+        // Whole-surah audio: fetch the single MP3 directly.
+        const res = await fetch(surahAudioUrl(reciter, surahNumber))
+        if (!res.ok) throw new Error(`Could not fetch surah ${surahNumber}`)
+        const blob = await res.blob()
+        setProgress({ done: 1, total: 1 })
+        const name = `${(surah?.englishName || `Surah ${surahNumber}`).replace(/[^A-Za-z0-9-]+/g, '_')}_${reciter}.mp3`
+        const url = URL.createObjectURL(blob)
+        const a = document.createElement('a')
+        a.href = url
+        a.download = name
+        document.body.appendChild(a)
+        a.click()
+        a.remove()
+        setTimeout(() => URL.revokeObjectURL(url), 10000)
+        setDownloadName(name)
+        return
+      }
+      setProgress({ done: 0, total: list.length })
       const parts = []
       for (let i = 0; i < list.length; i++) {
         const res = await fetch(ayahUrl(reciter, surahNumber, list[i]))

@@ -11,6 +11,7 @@ const TIMING_FILES = {
   Sudais: '/data/timings-Sudais.json',
   Shatri: '/data/timings-Shatri.json',
   Shuraym: '/data/timings-Shuraym.json',
+  Dukhain: '/data/timings-Dukhain.json',
 }
 
 const ML_FILE = '/data/ml-words.json'
@@ -45,6 +46,9 @@ export async function loadKaraoke(reciter) {
 // Returns { ar: [arabicWords], ml: [glosses], segs: [[w0,w1,start,end],...] }
 // aligned by index, or null when the data does not line up (static fallback).
 // arabicText should already be basmala-stripped (as fetchSurahTexts provides).
+// When the timing data carries ayahStartMs/ayahEndMs (whole-surah audio like
+// Dukhain), the returned window holds the ayah's position inside the surah
+// file; segments are relative to the window's start.
 export function ayahWords(timings, ml, surah, ayah, arabicText) {
   const entry = timings.find((t) => t.surah === surah && t.ayah === ayah)
   if (!entry || !entry.segments.length) return null
@@ -58,7 +62,13 @@ export function ayahWords(timings, ml, surah, ayah, arabicText) {
   const glosses = ml?.[String(surah)]?.[String(ayah)]?.[0]
   const mlGlosses =
     Array.isArray(glosses) && glosses.length === segs.length ? glosses : []
-  return { ar, ml: mlGlosses, segs }
+  return {
+    ar,
+    ml: mlGlosses,
+    segs,
+    startMs: entry.ayahStartMs,
+    endMs: entry.ayahEndMs,
+  }
 }
 
 // Segment index (0-based) active at elapsedMs within the ayah's audio.
