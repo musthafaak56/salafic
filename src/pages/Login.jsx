@@ -1,25 +1,9 @@
+import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import AuthLayout from '../components/AuthLayout'
 import Button from '../components/Button'
-
-const ROLES = [
-  {
-    key: 'superadmin',
-    label: 'Super admin',
-    desc: 'Full platform control',
-  },
-  {
-    key: 'admin',
-    label: 'Admin',
-    desc: 'Manage masjid data',
-  },
-  {
-    key: 'user',
-    label: 'User',
-    desc: 'View transparency',
-  },
-]
+import { GoogleLogo } from '@phosphor-icons/react'
 
 const ROLE_PATHS = {
   superadmin: '/superadmin',
@@ -27,45 +11,75 @@ const ROLE_PATHS = {
   user: '/',
 }
 
-export default function Login() {
-  const { login } = useAuth()
-  const navigate = useNavigate()
+function googleErrorMessage(code) {
+  switch (code) {
+    case 'auth/popup-closed-by-user':
+    case 'auth/cancelled-popup-request':
+      return ''
+    case 'auth/popup-blocked':
+      return 'The sign-in popup was blocked. Allow popups for this site and try again.'
+    case 'auth/operation-not-allowed':
+      return 'Google sign-in is not enabled yet. Ask the site owner to enable it in the Firebase console.'
+    case 'auth/unauthorized-domain':
+      return 'This domain is not authorized for Google sign-in.'
+    default:
+      return 'Something went wrong while signing in. Please try again.'
+  }
+}
 
-  async function handleLogin(role) {
-    await login(role)
-    navigate(ROLE_PATHS[role] || '/', { replace: true })
+export default function Login() {
+  const { loginWithGoogle } = useAuth()
+  const navigate = useNavigate()
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+
+  async function handleGoogle() {
+    setError('')
+    setBusy(true)
+    try {
+      const profileData = await loginWithGoogle()
+      navigate(ROLE_PATHS[profileData.role] || '/', { replace: true })
+    } catch (err) {
+      const message = googleErrorMessage(err?.code)
+      if (message) setError(message)
+    } finally {
+      setBusy(false)
+    }
   }
 
   return (
     <AuthLayout
       title="Sign in"
-      subtitle="Choose the role you want to explore."
+      subtitle="Use your Google account to sign in."
       footer={
         <>
           Need an account?{' '}
           <Link to="/register" className="font-medium text-primary hover:underline">
-            Create one
+            Sign up here
           </Link>
         </>
       }
     >
-      <div className="space-y-3">
-        {ROLES.map((role) => (
-          <button
-            key={role.key}
-            type="button"
-            onClick={() => handleLogin(role.key)}
-            className="flex w-full items-center justify-between gap-3 rounded-lg border border-line bg-surface px-4 py-3 text-left transition-colors hover:border-primary hover:bg-surface-subtle focus-visible:outline-2 focus-visible:outline-primary"
+      <div className="space-y-4">
+        <Button
+          type="button"
+          variant="outline"
+          className="w-full"
+          size="lg"
+          onClick={handleGoogle}
+          loading={busy}
+        >
+          <GoogleLogo className="h-5 w-5" weight="bold" />
+          Sign in with Google
+        </Button>
+        {error ? (
+          <p
+            className="rounded-lg border border-negative/30 bg-negative/10 p-3 text-sm text-negative"
+            role="alert"
           >
-            <span>
-              <span className="block text-sm font-medium text-ink">{role.label}</span>
-              <span className="block text-xs text-ink-secondary">{role.desc}</span>
-            </span>
-            <span className="text-ink-secondary" aria-hidden="true">
-              →
-            </span>
-          </button>
-        ))}
+            {error}
+          </p>
+        ) : null}
         <Button variant="ghost" size="sm" className="w-full" onClick={() => navigate('/')}>
           Continue as visitor
         </Button>
