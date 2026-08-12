@@ -91,7 +91,9 @@ export default function Quran() {
         ayah.number,
         ayah.arabic,
       )
-      setNowWords(words ? { words, basmala: ayah.basmala } : null)
+      setNowWords(
+        words ? { words, basmala: ayah.basmala, translation: ayah.translationMl || ayah.translation || '' } : null,
+      )
     } catch {
       setNowWords(null)
     }
@@ -590,25 +592,23 @@ export default function Quran() {
                 </p>
                 <p
                   style={{ fontFamily: fontPair.ml }}
-                  className="mt-4 font-malayalam text-xl leading-relaxed text-ink-secondary sm:text-2xl"
+                  className="mt-4 font-malayalam text-xl leading-relaxed text-ink sm:text-2xl"
                 >
-                  {nowWords.words.ml.map((gloss, i) => {
-                    const text = gloss.replace(/\r\n/g, ' ').trim()
-                    if (!text || text === '*') return null
-                    const active = effectiveGloss(nowWords.words.ml, activeWordIndex) === i
-                    return (
-                      <span
-                        key={i}
-                        className={`inline-block transition-colors duration-200 ${
-                          active ? 'font-semibold text-gold' : ''
-                        }`}
-                      >
-                        {text}
-                        {'\u00A0'}
-                      </span>
-                    )
-                  })}
+                  {nowWords.translation}
                 </p>
+                {(() => {
+                  const glossIndex = effectiveGloss(nowWords.words.ml, activeWordIndex)
+                  if (glossIndex < 0 || !nowWords.words.ml[glossIndex]) return null
+                  const gloss = nowWords.words.ml[glossIndex].replace(/\r\n/g, ' ').trim()
+                  return gloss && gloss !== '*' ? (
+                    <p
+                      style={{ fontFamily: fontPair.ml }}
+                      className="mt-3 inline-block rounded-full border border-gold/60 bg-gold/10 px-5 py-1.5 font-malayalam text-lg font-semibold text-gold sm:text-xl"
+                    >
+                      {gloss}
+                    </p>
+                  ) : null
+                })()}
               </div>
             </div>
           ) : null}

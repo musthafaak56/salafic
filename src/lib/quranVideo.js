@@ -102,18 +102,40 @@ function drawArabicLine(ctx, line, cx, y, w0, w1) {
   ctx.textAlign = 'center'
 }
 
-// Draws one line of Malayalam glosses left-to-right; the active gloss is gold.
-function drawGlossLine(ctx, line, cx, y, activeIndex) {
-  const spaceW = ctx.measureText(' ').width
-  const totalW = line.reduce((s, u) => s + u.w, 0) + spaceW * (line.length - 1)
-  ctx.textAlign = 'left'
-  let x = cx - totalW / 2
-  for (const unit of line) {
-    ctx.fillStyle = unit.i === activeIndex ? GOLD : 'rgba(247, 244, 239, 0.92)'
-    ctx.fillText(unit.text, x, y)
-    x += unit.w + spaceW
+// Fits the full Malayalam sentence into up to 4 lines, shrinking when needed.
+function fitMl(ctx, text, maxWidth, maxLines, fontFamily) {
+  for (const size of [40, 34, 30]) {
+    ctx.font = `500 ${size}px ${fontFamily}`
+    const lines = wrapLines(ctx, text, maxWidth)
+    if (lines.length <= maxLines) return { lines, size, leading: Math.round(size * 1.55) }
   }
-  ctx.textAlign = 'center'
+  ctx.font = `500 30px ${fontFamily}`
+  return { lines: wrapLines(ctx, text, maxWidth), size: 30, leading: 46 }
+}
+
+// Draws the highlighted word's Malayalam meaning in a rounded gold chip.
+function drawActiveGloss(ctx, text, y, fontFamily) {
+  const size = [44, 36, 30].find((s) => {
+    ctx.font = `600 ${s}px ${fontFamily}`
+    return ctx.measureText(text).width <= 840
+  }) ?? 30
+  ctx.font = `600 ${size}px ${fontFamily}`
+  const w = ctx.measureText(text).width + 56
+  const h = 66
+  const cx = W / 2
+  ctx.fillStyle = 'rgba(194, 147, 60, 0.10)'
+  ctx.strokeStyle = 'rgba(194, 147, 60, 0.55)'
+  ctx.lineWidth = 2
+  ctx.beginPath()
+  if (ctx.roundRect) {
+    ctx.roundRect(cx - w / 2, y - h + 26, w, h, 33)
+  } else {
+    ctx.rect(cx - w / 2, y - h + 26, w, h)
+  }
+  ctx.fill()
+  ctx.stroke()
+  ctx.fillStyle = GOLD
+  ctx.fillText(text, cx, y)
 }
 
 function ornament(ctx, cx, y, spread) {
@@ -201,23 +223,22 @@ function drawSlide(ctx, { surahLabel, surahNumber, ayah, index, total, words, ac
   ctx.lineTo(W / 2 + 60, arabicBottom + 84)
   ctx.stroke()
 
-  ctx.font = `500 40px ${f.ml}`
   const translationTop = arabicBottom + 168
+  const mlText = (ayah.translationMl || ayah.translation || '').replace(/\r\n/g, ' ').trim()
+  const fit = fitMl(ctx, mlText, 800, 4, f.ml)
+  ctx.font = `500 ${fit.size}px ${f.ml}`
+  ctx.fillStyle = 'rgba(247, 244, 239, 0.92)'
+  fit.lines.forEach((line, i) => {
+    ctx.fillText(line, W / 2, translationTop + i * fit.leading)
+  })
   if (hasWords && words.ml.length > 0) {
-    const glossUnits = words.ml
-      .map((text, i) => ({ text: text.replace(/\r\n/g, ' ').trim(), i }))
-      .filter((u) => u.text && u.text !== '*')
     const glossActive = effectiveGloss(words.ml, activeIdx)
-    const glossLines = wrapWordLines(ctx, glossUnits, 800)
-    glossLines.forEach((line, i) => {
-      drawGlossLine(ctx, line, W / 2, translationTop + i * 62, glossActive)
-    })
-  } else {
-    ctx.fillStyle = 'rgba(247, 244, 239, 0.92)'
-    const translation = wrapLines(ctx, ayah.translationMl || ayah.translation, 800)
-    translation.forEach((line, i) => {
-      ctx.fillText(line, W / 2, translationTop + i * 62)
-    })
+    if (glossActive >= 0) {
+      const text = (words.ml[glossActive] || '').replace(/\r\n/g, ' ').trim()
+      if (text && text !== '*') {
+        drawActiveGloss(ctx, text, translationTop + fit.lines.length * fit.leading + 14, f.ml)
+      }
+    }
   }
 
   ornament(ctx, W / 2, 1640, 210)
