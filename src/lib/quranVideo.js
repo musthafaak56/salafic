@@ -49,26 +49,30 @@ function wrapLines(ctx, text, maxWidth) {
   return lines
 }
 
+// Shared size ladder for both scripts so the Arabic line and the Malayalam
+// sentence render at the same visual size.
+const TEXT_SIZES = [48, 44, 40, 38, 36, 34, 32, 30, 28, 26, 24, 22]
+
 function fitArabic(ctx, text, maxWidth, maxLines, fontFamily) {
-  for (const size of [76, 66, 56, 48]) {
+  for (const size of TEXT_SIZES) {
     ctx.font = `600 ${size}px ${fontFamily}`
     const lines = wrapLines(ctx, text, maxWidth)
     if (lines.length <= maxLines) return { lines, size, leading: Math.round(size * 1.8) }
   }
-  ctx.font = `600 48px ${fontFamily}`
-  return { lines: wrapLines(ctx, text, maxWidth), size: 48, leading: 86 }
+  ctx.font = `600 22px ${fontFamily}`
+  return { lines: wrapLines(ctx, text, maxWidth), size: 22, leading: 40 }
 }
 
 // Lays out Arabic words into wrapped lines, tracking each word's width and
 // original index so the recited word can be highlighted individually.
 function fitArabicWords(ctx, words, maxWidth, maxLines, fontFamily) {
-  for (const size of [76, 66, 56, 48]) {
+  for (const size of TEXT_SIZES) {
     ctx.font = `600 ${size}px ${fontFamily}`
     const lines = wrapWordLines(ctx, words, maxWidth)
     if (lines.length <= maxLines) return { lines, size, leading: Math.round(size * 1.8) }
   }
-  ctx.font = `600 48px ${fontFamily}`
-  return { lines: wrapWordLines(ctx, words, maxWidth), size: 48, leading: 86 }
+  ctx.font = `600 22px ${fontFamily}`
+  return { lines: wrapWordLines(ctx, words, maxWidth), size: 22, leading: 40 }
 }
 
 // Wraps an array of words (or word-units with a .text + .w width) into lines,
@@ -115,7 +119,7 @@ function drawArabicLine(ctx, line, cx, y, w0, w1) {
 // line budget and its total height within availableHeight.
 function fitMl(ctx, text, maxWidth, maxLines, availableHeight, fontFamily) {
   let best = null
-  for (const size of [48, 44, 40, 38, 36, 34, 32, 30, 28, 26, 24, 22]) {
+  for (const size of TEXT_SIZES) {
     ctx.font = `500 ${size}px ${fontFamily}`
     const lines = wrapLines(ctx, text, maxWidth)
     const leading = Math.round(size * 1.55)
