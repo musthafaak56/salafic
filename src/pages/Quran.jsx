@@ -16,7 +16,7 @@ import {
   fetchSurahs,
   fetchSurahTexts,
 } from '../lib/quran'
-import { renderAyahVideo } from '../lib/quranVideo'
+import { renderAyahVideo, renderAyahVideoOffline, hasOfflineSupport } from '../lib/quranVideo'
 import { loadKaraoke, ayahWords, activeWord, effectiveGloss } from '../lib/karaoke'
 import AppHeader from '../components/AppHeader'
 import LoadingState from '../components/LoadingState'
@@ -40,6 +40,7 @@ export default function Quran() {
   const [downloadName, setDownloadName] = useState('')
 
   const [video, setVideo] = useState('idle')
+  const [renderMode, setRenderMode] = useState(null)
   const [videoName, setVideoName] = useState('')
   const [previewUrl, setPreviewUrl] = useState('')
 
@@ -329,9 +330,9 @@ export default function Quran() {
       return ''
     })
     const AC = window.AudioContext || window.webkitAudioContext
-    if (!AC || !HTMLCanvasElement.prototype.captureStream || typeof MediaRecorder === 'undefined') {
+    if (!AC) {
       window.alert(
-        'Video download is not supported on this browser yet — iPhone/iPad Safari cannot record video. It works in Chrome, and in Safari on a Mac. MP3 works everywhere.',
+        'Video download is not supported on this browser yet — it needs a newer browser. MP3 works everywhere.',
       )
       return
     }
@@ -344,9 +345,19 @@ export default function Quran() {
       const list = ayahList()
       const ayahs = list.map((n) => texts.ayahs[n - 1]).filter(Boolean)
       if (ayahs.length !== list.length) throw new Error('Could not fetch ayah text')
-      if (!window.confirm(`Record a video of ${list.length} ayah${list.length === 1 ? '' : 's'} (${texts.englishName}, ${reciter})?`)) {
+      const canRecord =
+        typeof MediaRecorder !== 'undefined' && HTMLCanvasElement.prototype.captureStream
+      const offline = hasOfflineSupport()
+      if (!offline && !canRecord) {
+        window.alert(
+          'Video download is not supported on this browser yet — it needs a newer browser. It works in Chrome, Safari (macOS and iOS 16.4+), and Firefox 130+. MP3 works everywhere.',
+        )
         return
       }
+      if (!window.confirm(`Render a video of ${list.length} ayah${list.length === 1 ? '' : 's'} (${texts.englishName}, ${reciter})?`)) {
+        return
+      }
+      setRenderMode(offline ? 'offline' : 'record')
       setVideo('render')
       await Promise.all(
         ['400', '500', '600', '700'].flatMap((w) => [
@@ -354,7 +365,7 @@ export default function Quran() {
           document.fonts.load(`${w} 40px ${fontPair.ml}`),
         ]),
       ).catch(() => {})
-      const { blob, ext } = await renderAyahVideo({
+      const args = {
         surahNumber,
         surahLabel: texts.englishName.toUpperCase(),
         ayahs,
@@ -362,8 +373,17 @@ export default function Quran() {
         reciterLabel: RECITERS.find((r) => r.id === reciter)?.label,
         audio,
         fonts: { ar: fontPair.ar, ml: fontPair.ml },
-        onProgress: ({ phase, done }) => setProgress({ done, total: phase === 'render' ? 1 : ayahs.length }),
-      })
+        onProgress: ({ done, total }) => setProgress({ done, total }),
+      }
+      const { blob, ext } = offline
+        ? await renderAyahVideoOffline(args).catch(async (err) => {
+            if (err?.message === 'no-codec' && canRecord) {
+              setRenderMode('record')
+              return renderAyahVideo(args)
+            }
+            throw err
+          })
+        : await renderAyahVideo(args)
       const name = `${(texts.englishName || `Surah ${surahNumber}`).replace(/[^A-Za-z0-9-]+/g, '_')}_${clampedStart}-${clampedEnd}_${reciter}.${ext}`
       setVideoName(name)
       setPreviewUrl(URL.createObjectURL(blob))
@@ -373,15 +393,21 @@ export default function Quran() {
         err?.message === 'too-long'
           ? 'This range is too long for a video (max ~15 minutes). Pick fewer ayahs or use the MP3 download.'
           : err?.message === 'no-support' || err?.message === 'no-mime'
-            ? 'Video download is not supported on this browser yet — iPhone/iPad Safari cannot record video. It works in Chrome, and in Safari on a Mac. MP3 works everywhere.'
-            : err?.message === 'audio-blocked'
-              ? 'Your browser blocked the audio needed for recording. Unmute this tab and tap Download Video again — it must start from your tap, so do not switch away while the clips load.'
-              : err?.message === 'recording-error'
-                ? 'Recording failed. Please try again.'
-                : `Video failed: ${err.message}`
+            ? 'Video download is not supported on this browser yet — it needs a newer browser. It works in Chrome, Safari (macOS and iOS 16.4+), and Firefox 130+. MP3 works everywhere.'
+            : err?.message === 'no-codec'
+              ? 'This browser cannot encode video for download. Try the latest Chrome or Safari, or use the MP3 download.'
+              : err?.message === 'audio-blocked'
+                ? 'Your browser blocked the audio needed for recording. Unmute this tab and tap Download Video again — it must start from your tap, so do not switch away while the clips load.'
+                : err?.message === 'recording-error' || err?.message === 'encode-error'
+                  ? 'Video creation failed. Please try again.'
+                  : `Video failed: ${err.message}`
       window.alert(msg)
     } finally {
       setVideo('idle')
+      setRenderMode(null)
+      try {
+        await audio.close()
+      } catch {}
     }
   }
 
@@ -571,7 +597,9 @@ export default function Quran() {
                 {video === 'fetch'
                   ? `Fetching ${progress.done}/${progress.total}…`
                   : video === 'render'
-                    ? 'Recording…'
+                    ? renderMode === 'record'
+                      ? 'Recording…'
+                      : 'Rendering…'
                     : 'Download Video'}
               </button>
             </div>
@@ -582,21 +610,27 @@ export default function Quran() {
               <div className="h-2 w-full overflow-hidden rounded-full bg-surface-subtle">
                 <div
                   className={`h-full rounded-full bg-gold transition-[width] duration-200 ${
-                    video === 'render' ? 'animate-pulse' : ''
+                    renderMode === 'record' ? 'animate-pulse' : ''
                   }`}
                   style={{
                     width:
-                      video === 'render'
+                      renderMode === 'record'
                         ? '100%'
                         : `${(progress.done / Math.max(1, progress.total)) * 100}%`,
                   }}
                 />
               </div>
               {video === 'render' ? (
-                <p className="mt-2 text-sm text-ink-secondary">
-                  Recording video in real time — keep this tab visible. This takes as long as
-                  the recitation itself.
-                </p>
+                renderMode === 'record' ? (
+                  <p className="mt-2 text-sm text-ink-secondary">
+                    Recording video in real time — keep this tab visible. This takes as long as
+                    the recitation itself.
+                  </p>
+                ) : (
+                  <p className="mt-2 text-sm text-ink-secondary">
+                    Rendering video — you can switch away; it encodes faster than real time.
+                  </p>
+                )
               ) : null}
             </div>
           ) : null}

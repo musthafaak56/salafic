@@ -1,6 +1,14 @@
 import { ayahUrl, surahAudioUrl, surahMode } from './quran'
 import { FONT_PAIRS } from './quran'
 import { loadKaraoke, ayahWords, activeWord, effectiveGloss } from './karaoke'
+import {
+  Output,
+  Mp4OutputFormat,
+  BufferTarget,
+  EncodedVideoPacketSource,
+  EncodedAudioPacketSource,
+  EncodedPacket,
+} from 'mediabunny'
 
 const W = 1080
 const H = 1920
@@ -343,7 +351,7 @@ export async function renderAyahVideo({ surahNumber, surahLabel, ayahs, reciter,
 
     if (surahAud) {
       // Whole-surah audio: no decode; play each ayah window via an <audio> element.
-      const windows = ayahs.map((ayah, i) => {
+      const windows = ayahs.map((ayah) => {
         const w = karaoke
           ? ayahWords(karaoke.timings, karaoke.ml, surahNumber, ayah.number, ayah.arabic)
           : null
@@ -517,5 +525,294 @@ export async function renderAyahVideo({ surahNumber, surahLabel, ayahs, reciter,
     return { blob, ext: mime.startsWith('video/mp4') ? 'mp4' : 'webm' }
   } finally {
     setTimeout(() => audio.close(), 500)
+  }
+}
+
+const OFFLINE_FPS = 30
+const VIDEO_BITRATE = 8_000_000
+const AUDIO_BITRATE = 128_000
+const VIDEO_CODECS = ['avc1.640028', 'avc1.4d401e', 'avc1.42e01e', 'avc1.42001f']
+const LEAD_IN = 0.3
+
+export function hasOfflineSupport() {
+  return (
+    typeof VideoEncoder === 'function' &&
+    typeof AudioEncoder === 'function' &&
+    typeof VideoFrame === 'function'
+  )
+}
+
+async function pickVideoCodec(width, height) {
+  for (const codec of VIDEO_CODECS) {
+    try {
+      const res = await VideoEncoder.isConfigSupported({
+        codec,
+        width,
+        height,
+        bitrate: VIDEO_BITRATE,
+        framerate: OFFLINE_FPS,
+      })
+      if (res.supported) return codec
+    } catch {}
+  }
+  return null
+}
+
+async function pickAudioCodec(sampleRate, channels) {
+  try {
+    const res = await AudioEncoder.isConfigSupported({
+      codec: 'mp4a.40.2',
+      sampleRate,
+      numberOfChannels: channels,
+      bitrate: AUDIO_BITRATE,
+    })
+    if (res.supported) return 'mp4a.40.2'
+  } catch {}
+  return null
+}
+
+function decodeBuffer(ctx, data) {
+  return new Promise((resolve, reject) => {
+    ctx.decodeAudioData(data.slice(0), resolve, reject)
+  })
+}
+
+// Renders the ayah slideshow offline with WebCodecs: each slide is drawn at a
+// fixed frame rate, encoded to H.264, while the recitation is decoded, placed
+// on a PCM timeline at the exact slide offsets (gaps become silence) and
+// encoded to AAC, then both tracks are muxed into a fast-start MP4. Unlike the
+// MediaRecorder path this needs no live audio, runs faster than real time and
+// works in any browser with WebCodecs (Safari 16.4+, Chrome 94+, Firefox 130+).
+export async function renderAyahVideoOffline({
+  surahNumber,
+  surahLabel,
+  ayahs,
+  reciter,
+  reciterLabel,
+  onProgress,
+  audio,
+  fonts,
+}) {
+  if (!hasOfflineSupport()) throw new Error('no-support')
+
+  onProgress?.({ phase: 'fetch', done: 0, total: ayahs.length })
+  const karaokeP = loadKaraoke(reciter).catch(() => null)
+  const surahAud = surahMode(reciter)
+  let surahData = null
+  const raw = []
+  if (surahAud) {
+    const res = await fetch(surahAudioUrl(reciter, surahNumber))
+    if (!res.ok) throw new Error(`Could not fetch surah ${surahNumber} audio`)
+    surahData = await res.arrayBuffer()
+    onProgress?.({ phase: 'fetch', done: 1, total: 1 })
+  } else {
+    for (let i = 0; i < ayahs.length; i++) {
+      const res = await fetch(ayahUrl(reciter, surahNumber, ayahs[i].number))
+      if (!res.ok) throw new Error(`Could not fetch ayah ${ayahs[i].number}`)
+      raw.push(await res.arrayBuffer())
+      onProgress?.({ phase: 'fetch', done: i + 1, total: ayahs.length })
+    }
+  }
+
+  if (!audio) {
+    const AC = window.AudioContext || window.webkitAudioContext
+    if (!AC) throw new Error('no-support')
+    audio = new AC()
+    audio.resume().catch(() => {})
+  }
+
+  const karaoke = await karaokeP
+  const words = ayahs.map((ayah) =>
+    karaoke ? ayahWords(karaoke.timings, karaoke.ml, surahNumber, ayah.number, ayah.arabic) : null,
+  )
+
+  let decoded
+  if (surahAud) {
+    const buf = await decodeBuffer(audio, surahData)
+    decoded = ayahs.map((ayah, i) => {
+      const w = words[i]
+      if (!w || typeof w.startMs !== 'number' || typeof w.endMs !== 'number') {
+        throw new Error(`No timing window for ${surahNumber}:${ayah.number}`)
+      }
+      return { buffer: buf, start: w.startMs / 1000, dur: (w.endMs - w.startMs) / 1000, words: w }
+    })
+  } else {
+    const bufs = []
+    for (const data of raw) bufs.push(await decodeBuffer(audio, data))
+    decoded = ayahs.map((ayah, i) => ({
+      buffer: bufs[i],
+      start: 0,
+      dur: bufs[i].duration,
+      words: words[i],
+    }))
+  }
+
+  // Timeline mirrors the MediaRecorder path: each ayah's audio starts at its
+  // window, its slide follows after the LEAD_IN lead, and PAD silence gaps sit
+  // between windows.
+  let t = 0
+  for (const d of decoded) {
+    d.audioAt = t
+    d.slideAt = t + LEAD_IN
+    t += d.dur + PAD
+  }
+  const totalDur = t - PAD + LEAD_IN + TAIL
+  if (totalDur > MAX_SECONDS) throw new Error('too-long')
+
+  const sampleRate = decoded[0].buffer.sampleRate
+  const channels = decoded[0].buffer.numberOfChannels
+  const totalSamples = Math.max(1, Math.ceil(totalDur * sampleRate))
+  const pcm = Array.from({ length: channels }, () => new Float32Array(totalSamples))
+  for (const d of decoded) {
+    const startSample = Math.round(d.audioAt * sampleRate)
+    const srcStart = Math.round(d.start * sampleRate)
+    const count = Math.min(Math.round(d.dur * sampleRate), d.buffer.length - srcStart)
+    if (count <= 0) continue
+    for (let c = 0; c < channels; c++) {
+      pcm[c].set(d.buffer.getChannelData(c).subarray(srcStart, srcStart + count), startSample)
+    }
+  }
+
+  const videoCodec = await pickVideoCodec(W, H)
+  const audioCodec = await pickAudioCodec(sampleRate, channels)
+  if (!videoCodec || !audioCodec) throw new Error('no-codec')
+
+  const output = new Output({
+    format: new Mp4OutputFormat({ fastStart: 'in-memory' }),
+    target: new BufferTarget(),
+  })
+  const videoSource = new EncodedVideoPacketSource('avc')
+  output.addVideoTrack(videoSource, { frameRate: OFFLINE_FPS })
+  const audioSource = new EncodedAudioPacketSource('aac')
+  output.addAudioTrack(audioSource)
+  await output.start()
+
+  const canvas = document.createElement('canvas')
+  canvas.width = W
+  canvas.height = H
+  const ctx = canvas.getContext('2d')
+
+  let encError = null
+  const pending = []
+  const drain = async () => {
+    if (pending.length) await Promise.allSettled(pending.splice(0))
+  }
+
+  const videoEncoder = new VideoEncoder({
+    output: (chunk, meta) => pending.push(videoSource.add(EncodedPacket.fromEncodedChunk(chunk), meta)),
+    error: (e) => {
+      encError = e
+    },
+  })
+  videoEncoder.configure({
+    codec: videoCodec,
+    width: W,
+    height: H,
+    bitrate: VIDEO_BITRATE,
+    framerate: OFFLINE_FPS,
+    latencyMode: 'quality',
+  })
+
+  const audioEncoder = new AudioEncoder({
+    output: (chunk, meta) => pending.push(audioSource.add(EncodedPacket.fromEncodedChunk(chunk), meta)),
+    error: (e) => {
+      encError = e
+    },
+  })
+  audioEncoder.configure({
+    codec: audioCodec,
+    sampleRate,
+    numberOfChannels: channels,
+    bitrate: AUDIO_BITRATE,
+  })
+
+  try {
+    onProgress?.({ phase: 'render', done: 0, total: 1 })
+    const frameCount = Math.max(1, Math.round(totalDur * OFFLINE_FPS))
+    let curSlide = null
+    let lastActive = -1
+    for (let i = 0; i < frameCount; i++) {
+      if (encError) throw new Error('encode-error')
+      const elapsed = i / OFFLINE_FPS
+      let slide = decoded[0]
+      for (const d of decoded) if (d.slideAt <= elapsed) slide = d
+      if (slide !== curSlide) {
+        curSlide = slide
+        lastActive = -1
+      }
+      if (slide.words) {
+        const found = activeWord(slide.words.segs, (elapsed - slide.slideAt) * 1000)
+        if (found >= 0) lastActive = found
+      } else {
+        lastActive = -1
+      }
+      drawSlide(ctx, {
+        surahLabel,
+        surahNumber,
+        ayah: ayahs[decoded.indexOf(slide)],
+        index: decoded.indexOf(slide),
+        total: ayahs.length,
+        words: slide.words,
+        active: lastActive,
+        fonts,
+        reciterLabel,
+      })
+      const frame = new VideoFrame(canvas, {
+        timestamp: Math.round(elapsed * 1e6),
+        duration: Math.round(1e6 / OFFLINE_FPS),
+      })
+      videoEncoder.encode(frame)
+      frame.close()
+      if (videoEncoder.encodeQueueSize > 12) await drain()
+      if (pending.length >= 64) await drain()
+      if (i % 24 === 0 || i === frameCount - 1) {
+        onProgress?.({ phase: 'render', done: i + 1, total: frameCount })
+      }
+    }
+    await drain()
+
+    const audioChunk = Math.max(1024, Math.round(sampleRate * 0.5))
+    for (let pos = 0; pos < totalSamples; pos += audioChunk) {
+      if (encError) throw new Error('encode-error')
+      const n = Math.min(audioChunk, totalSamples - pos)
+      const data = new Float32Array(n * channels)
+      for (let c = 0; c < channels; c++) {
+        const ch = pcm[c].subarray(pos, pos + n)
+        for (let j = 0; j < n; j++) data[j * channels + c] = ch[j]
+      }
+      const audioData = new AudioData({
+        format: 'f32',
+        sampleRate,
+        numberOfFrames: n,
+        numberOfChannels: channels,
+        timestamp: Math.round((pos / sampleRate) * 1e6),
+        data,
+      })
+      audioEncoder.encode(audioData)
+      audioData.close()
+      if (audioEncoder.encodeQueueSize > 12) await drain()
+    }
+    await drain()
+
+    await videoEncoder.flush()
+    await audioEncoder.flush()
+    videoSource.close()
+    audioSource.close()
+    await output.finalize()
+    if (encError) throw new Error('encode-error')
+    const blob = new Blob([output.target.buffer], { type: 'video/mp4' })
+    return { blob, ext: 'mp4' }
+  } catch (err) {
+    try {
+      await output.cancel()
+    } catch {}
+    throw err
+  } finally {
+    try {
+      videoEncoder.close()
+    } catch {}
+    try {
+      audioEncoder.close()
+    } catch {}
   }
 }
