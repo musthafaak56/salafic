@@ -10,8 +10,8 @@ import {
   EncodedPacket,
 } from 'mediabunny'
 
-const W = 1080
-const H = 1920
+const W = 720
+const H = 1280
 const NAVY = '#011F3B'
 const CREAM = '#F7F4EF'
 const GOLD = '#C2933C'
@@ -148,23 +148,26 @@ function drawCentered(ctx, text, cx, y) {
 }
 
 // Draws the highlighted word's Malayalam meaning in a rounded gold chip.
-function drawActiveGloss(ctx, text, y, fontFamily) {
-  const size = [44, 36, 30].find((s) => {
-    ctx.font = `600 ${s}px ${fontFamily}`
-    return ctx.measureText(text).width <= 840
-  }) ?? 30
+function drawActiveGloss(ctx, text, y, fontFamily, S) {
+  const size =
+    [48, 40, 34]
+      .map((s) => Math.round(s * S))
+      .find((s) => {
+        ctx.font = `600 ${s}px ${fontFamily}`
+        return ctx.measureText(text).width <= 840 * S
+      }) ?? Math.round(20 * S)
   ctx.font = `600 ${size}px ${fontFamily}`
-  const w = ctx.measureText(text).width + 56
-  const h = 66
+  const w = ctx.measureText(text).width + 56 * S
+  const h = 66 * S
   const cx = W / 2
   ctx.fillStyle = 'rgba(194, 147, 60, 0.10)'
   ctx.strokeStyle = 'rgba(194, 147, 60, 0.55)'
   ctx.lineWidth = 2
   ctx.beginPath()
   if (ctx.roundRect) {
-    ctx.roundRect(cx - w / 2, y - h + 26, w, h, 33)
+    ctx.roundRect(cx - w / 2, y - h + 26 * S, w, h, 33 * S)
   } else {
-    ctx.rect(cx - w / 2, y - h + 26, w, h)
+    ctx.rect(cx - w / 2, y - h + 26 * S, w, h)
   }
   ctx.fill()
   ctx.stroke()
@@ -193,32 +196,33 @@ function ornament(ctx, cx, y, spread) {
 
 function drawSlide(ctx, { surahLabel, surahNumber, ayah, index, total, words, active, fonts, reciterLabel }) {
   const f = fonts || DEFAULT_FONTS
+  const S = H / 1920
   ctx.fillStyle = NAVY
   ctx.fillRect(0, 0, W, H)
 
-  ornament(ctx, W / 2, 168, 210)
+  ornament(ctx, W / 2, 168 * S, 210 * S)
 
   ctx.textAlign = 'center'
   ctx.textBaseline = 'alphabetic'
   try {
-    ctx.letterSpacing = '5px'
+    ctx.letterSpacing = `${5 * S}px`
   } catch {}
 
-  ctx.font = '700 30px "Cabinet Grotesk"'
+  ctx.font = `700 ${Math.round(30 * S)}px "Cabinet Grotesk"`
   ctx.fillStyle = 'rgba(194, 147, 60, 0.95)'
-  ctx.fillText(`${surahLabel} · ${surahNumber}:${ayah.number}`, W / 2, 250)
+  ctx.fillText(`${surahLabel} · ${surahNumber}:${ayah.number}`, W / 2, 250 * S)
 
-  ctx.font = '500 22px "Satoshi"'
+  ctx.font = `500 ${Math.round(22 * S)}px "Satoshi"`
   ctx.fillStyle = 'rgba(247, 244, 239, 0.5)'
-  ctx.fillText(`${index + 1} / ${total}`, W / 2, 296)
+  ctx.fillText(`${index + 1} / ${total}`, W / 2, 296 * S)
 
   ctx.letterSpacing = '0px'
 
   const showBasmala = index === 0 && ayah.basmala
   if (showBasmala) {
-    ctx.font = `600 44px ${f.ar}`
+    ctx.font = `600 ${Math.round(44 * S)}px ${f.ar}`
     ctx.fillStyle = 'rgba(194, 147, 60, 0.92)'
-    ctx.fillText('بِسْمِ ٱللَّهِ ٱلرَّحْمَٰنِ ٱلرَّحِيمِ', W / 2, 574)
+    ctx.fillText('بِسْمِ ٱللَّهِ ٱلرَّحْمَٰنِ ٱلرَّحِيمِ', W / 2, 574 * S)
   }
 
   const activeIdx = typeof active === 'number' && active >= 0 ? active : -1
@@ -227,11 +231,11 @@ function drawSlide(ctx, { surahLabel, surahNumber, ayah, index, total, words, ac
   const w1 = activeSeg ? activeSeg[1] : -1
 
   const hasWords = words && words.ar.length > 0
-  let arabicTop = showBasmala ? 712 : 640
+  let arabicTop = (showBasmala ? 712 : 640) * S
   let arabicLines
   let arabicLeading
   if (hasWords) {
-    const fit = fitArabicWords(ctx, words.ar.map((text, i) => ({ text, i })), 900, 4, f.ar)
+    const fit = fitArabicWords(ctx, words.ar.map((text, i) => ({ text, i })), 900 * S, 4, f.ar)
     arabicLines = fit.lines
     arabicLeading = fit.leading
     ctx.font = `600 ${fit.size}px ${f.ar}`
@@ -239,7 +243,7 @@ function drawSlide(ctx, { surahLabel, surahNumber, ayah, index, total, words, ac
       drawArabicLine(ctx, line, W / 2, arabicTop + i * arabicLeading, w0, w1)
     })
   } else {
-    const fit = fitArabic(ctx, ayah.arabic, 900, 4, f.ar)
+    const fit = fitArabic(ctx, ayah.arabic, 900 * S, 4, f.ar)
     arabicLines = fit.lines
     arabicLeading = fit.leading
     ctx.font = `600 ${fit.size}px ${f.ar}`
@@ -253,14 +257,15 @@ function drawSlide(ctx, { surahLabel, surahNumber, ayah, index, total, words, ac
   ctx.strokeStyle = 'rgba(194, 147, 60, 0.4)'
   ctx.lineWidth = 1
   ctx.beginPath()
-  ctx.moveTo(W / 2 - 60, arabicBottom + 84)
-  ctx.lineTo(W / 2 + 60, arabicBottom + 84)
+  ctx.moveTo(W / 2 - 60 * S, arabicBottom + 84 * S)
+  ctx.lineTo(W / 2 + 60 * S, arabicBottom + 84 * S)
   ctx.stroke()
 
-  const translationTop = arabicBottom + 168
+  const translationTop = arabicBottom + 168 * S
   const mlText = (ayah.translationMl || ayah.translation || '').replace(/\r\n/g, ' ').trim()
-  const glossReserve = hasWords && words.ml.length > 0 ? 170 : 0
-  const fit = fitMl(ctx, mlText, 800, 4, 1640 - translationTop - 40 - glossReserve, f.ml)
+  const glossReserve = hasWords && words.ml.length > 0 ? 170 * S : 0
+  const avail = 1640 * S - translationTop - 40 * S - glossReserve
+  const fit = fitMl(ctx, mlText, 800 * S, 4, avail, f.ml)
   ctx.font = `500 ${fit.size}px ${f.ml}`
   ctx.fillStyle = 'rgba(247, 244, 239, 0.92)'
   fit.lines.forEach((line, i) => {
@@ -271,26 +276,26 @@ function drawSlide(ctx, { surahLabel, surahNumber, ayah, index, total, words, ac
     if (glossActive >= 0) {
       const text = (words.ml[glossActive] || '').replace(/\r\n/g, ' ').trim()
       if (text && text !== '*') {
-        drawActiveGloss(ctx, text, translationTop + fit.lines.length * fit.leading + 80, f.ml)
+        drawActiveGloss(ctx, text, translationTop + fit.lines.length * fit.leading + 80 * S, f.ml, S)
       }
     }
   }
 
-  ornament(ctx, W / 2, 1640, 210)
+  ornament(ctx, W / 2, 1640 * S, 210 * S)
 
-  ctx.font = '500 19px "Satoshi"'
+  ctx.font = `500 ${Math.round(19 * S)}px "Satoshi"`
   try {
-    ctx.letterSpacing = '6px'
+    ctx.letterSpacing = `${6 * S}px`
   } catch {}
   ctx.fillStyle = 'rgba(194, 147, 60, 0.8)'
-  ctx.fillText('SALAFI CENTER CHERUKUNNU', W / 2, 1706)
+  ctx.fillText('SALAFI CENTER CHERUKUNNU', W / 2, 1706 * S)
 
   if (reciterLabel) {
     try {
-      ctx.letterSpacing = '3px'
+      ctx.letterSpacing = `${3 * S}px`
     } catch {}
-    ctx.font = '500 17px "Satoshi"'
-    ctx.fillText(reciterLabel.toUpperCase(), W / 2, 1750)
+    ctx.font = `500 ${Math.round(17 * S)}px "Satoshi"`
+    ctx.fillText(reciterLabel.toUpperCase(), W / 2, 1750 * S)
   }
 }
 
@@ -529,8 +534,8 @@ export async function renderAyahVideo({ surahNumber, surahLabel, ayahs, reciter,
   }
 }
 
-const OFFLINE_FPS = 30
-const VIDEO_BITRATE = 8_000_000
+const OFFLINE_FPS = 25
+const VIDEO_BITRATE = 5_500_000
 const AUDIO_BITRATE = 128_000
 const VIDEO_CODECS = ['avc1.640028', 'avc1.4d401e', 'avc1.42e01e', 'avc1.42001f']
 const LEAD_IN = 0.3
@@ -841,6 +846,10 @@ export async function renderAyahVideoOffline({
       frame.close()
       if (videoEncoder.encodeQueueSize > 4) await drain()
       if (pending.length >= 32) await drain()
+      if (i % 100 === 99 && i !== frameCount - 1) {
+        await videoEncoder.flush()
+        await drain()
+      }
       if (i % 24 === 0 || i === frameCount - 1) {
         onProgress?.({ phase: 'render', done: i + 1, total: frameCount })
         debugStep('frames', `${i + 1}/${frameCount}`)
