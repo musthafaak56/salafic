@@ -6,6 +6,7 @@ import Login from './pages/Login'
 import Register from './pages/Register'
 import Home from './pages/Home'
 import Quran from './pages/Quran'
+import QhlsDocuments from './pages/QhlsDocuments'
 import AdminLayout from './pages/admin/AdminLayout'
 import Overview from './pages/admin/Overview'
 import Donations from './pages/admin/Donations'
@@ -41,6 +42,7 @@ function App() {
             <Route path="/register" element={<Register />} />
             <Route path="/" element={<Home />} />
             <Route path="/quran" element={<Quran />} />
+            <Route path="/qhl-documents" element={<QhlsDocuments />} />
             <Route path="/forms/:formId" element={<PublicForm />} />
             <Route
               path="/admin"

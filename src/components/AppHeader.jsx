@@ -109,6 +109,19 @@ export default function AppHeader({ area = 'public', onMenuClick, menuOpen }) {
           >
             Quran
           </NavLink>
+
+          <NavLink
+            to="/qhl-documents"
+            className={({ isActive }) =>
+              `flex h-10 items-center rounded-xl px-3 text-sm font-medium transition-colors duration-200 ${
+                isActive
+                  ? 'bg-primary-soft text-primary'
+                  : 'text-ink-secondary hover:text-ink'
+              }`
+            }
+          >
+            QHLS Docs
+          </NavLink>
         </nav>
 
         <div className="ml-auto flex items-center gap-2">
