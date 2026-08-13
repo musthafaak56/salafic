@@ -672,6 +672,14 @@ export async function renderAyahVideoOffline({
       pcm[c].set(d.buffer.getChannelData(c).subarray(srcStart, srcStart + count), startSample)
     }
   }
+  // Release the decoded audio now that its windows are copied into the timeline.
+  // On iOS the whole-surah buffer is hundreds of MB; keeping it alive while the
+  // frames are encoded pushes the tab over Safari's memory limit, which kills
+  // the page and reloads it instead of ever showing the video.
+  const slides = decoded.map((d, i) => ({ slideAt: d.slideAt, dur: d.dur, words: d.words, index: i }))
+  decoded = null
+  surahData = null
+  raw.length = 0
 
   const videoCodec = await pickVideoCodec(W, H)
   const audioCodec = await pickAudioCodec(sampleRate, channels)
@@ -728,49 +736,10 @@ export async function renderAyahVideoOffline({
 
   try {
     onProgress?.({ phase: 'render', done: 0, total: 1 })
-    const frameCount = Math.max(1, Math.round(totalDur * OFFLINE_FPS))
-    let curSlide = null
-    let lastActive = -1
-    for (let i = 0; i < frameCount; i++) {
-      if (encError) throw new Error('encode-error')
-      const elapsed = i / OFFLINE_FPS
-      let slide = decoded[0]
-      for (const d of decoded) if (d.slideAt <= elapsed) slide = d
-      if (slide !== curSlide) {
-        curSlide = slide
-        lastActive = -1
-      }
-      if (slide.words) {
-        const found = activeWord(slide.words.segs, (elapsed - slide.slideAt) * 1000)
-        if (found >= 0) lastActive = found
-      } else {
-        lastActive = -1
-      }
-      drawSlide(ctx, {
-        surahLabel,
-        surahNumber,
-        ayah: ayahs[decoded.indexOf(slide)],
-        index: decoded.indexOf(slide),
-        total: ayahs.length,
-        words: slide.words,
-        active: lastActive,
-        fonts,
-        reciterLabel,
-      })
-      const frame = new VideoFrame(canvas, {
-        timestamp: Math.round(elapsed * 1e6),
-        duration: Math.round(1e6 / OFFLINE_FPS),
-      })
-      videoEncoder.encode(frame)
-      frame.close()
-      if (videoEncoder.encodeQueueSize > 12) await drain()
-      if (pending.length >= 64) await drain()
-      if (i % 24 === 0 || i === frameCount - 1) {
-        onProgress?.({ phase: 'render', done: i + 1, total: frameCount })
-      }
-    }
-    await drain()
 
+    // Audio first: the encoded packets are tiny, and the PCM timeline (the
+    // largest remaining allocation) can be dropped before video frames start
+    // accumulating in memory.
     const audioChunk = Math.max(1024, Math.round(sampleRate * 0.5))
     for (let pos = 0; pos < totalSamples; pos += audioChunk) {
       if (encError) throw new Error('encode-error')
@@ -791,6 +760,50 @@ export async function renderAyahVideoOffline({
       audioEncoder.encode(audioData)
       audioData.close()
       if (audioEncoder.encodeQueueSize > 12) await drain()
+    }
+    await drain()
+    pcm.length = 0
+
+    const frameCount = Math.max(1, Math.round(totalDur * OFFLINE_FPS))
+    let curSlide = null
+    let lastActive = -1
+    for (let i = 0; i < frameCount; i++) {
+      if (encError) throw new Error('encode-error')
+      const elapsed = i / OFFLINE_FPS
+      let slide = slides[0]
+      for (const s of slides) if (s.slideAt <= elapsed) slide = s
+      if (slide !== curSlide) {
+        curSlide = slide
+        lastActive = -1
+      }
+      if (slide.words) {
+        const found = activeWord(slide.words.segs, (elapsed - slide.slideAt) * 1000)
+        if (found >= 0) lastActive = found
+      } else {
+        lastActive = -1
+      }
+      drawSlide(ctx, {
+        surahLabel,
+        surahNumber,
+        ayah: ayahs[slide.index],
+        index: slide.index,
+        total: ayahs.length,
+        words: slide.words,
+        active: lastActive,
+        fonts,
+        reciterLabel,
+      })
+      const frame = new VideoFrame(canvas, {
+        timestamp: Math.round(elapsed * 1e6),
+        duration: Math.round(1e6 / OFFLINE_FPS),
+      })
+      videoEncoder.encode(frame)
+      frame.close()
+      if (videoEncoder.encodeQueueSize > 12) await drain()
+      if (pending.length >= 64) await drain()
+      if (i % 24 === 0 || i === frameCount - 1) {
+        onProgress?.({ phase: 'render', done: i + 1, total: frameCount })
+      }
     }
     await drain()
 
