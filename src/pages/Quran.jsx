@@ -23,7 +23,9 @@ import LoadingState from '../components/LoadingState'
 
 export default function Quran() {
   const [surahs, setSurahs] = useState(null)
-  const [reciter, setReciter] = useState(RECITERS[0].id)
+  const [reciter, setReciter] = useState(
+    () => RECITERS.find((r) => r.id === 'Dukhain')?.id ?? RECITERS[0].id,
+  )
   const [surahNumber, setSurahNumber] = useState(23)
   const [startAyah, setStartAyah] = useState(1)
   const [endAyah, setEndAyah] = useState(3)
@@ -67,6 +69,26 @@ export default function Quran() {
 
   useEffect(() => {
     fetchSurahs().then(setSurahs)
+  }, [])
+
+  // Safari kills and reloads the tab when the video render runs out of memory
+  // (mainly iOS). The renderer checkpoints its progress to sessionStorage, so
+  // after such a crash-reload we can tell the user what happened and that the
+  // MP3 download still works.
+  useEffect(() => {
+    let step = null
+    try {
+      step = sessionStorage.getItem('__salaficRenderStep')
+    } catch {}
+    if (step) {
+      try {
+        sessionStorage.removeItem('__salaficRenderStep')
+      } catch {}
+      window.alert(
+        'The video render was cut off by the browser (Safari closed the page at step: ' +
+          `${step}). Try a shorter ayah range, or use the MP3 download.`,
+      )
+    }
   }, [])
 
   const surah = surahs?.find((s) => s.number === surahNumber)
@@ -377,7 +399,7 @@ export default function Quran() {
       }
       const { blob, ext } = offline
         ? await renderAyahVideoOffline(args).catch(async (err) => {
-            if (err?.message === 'no-codec' && canRecord) {
+            if ((err?.message === 'no-codec' || err?.message === 'encode-error') && canRecord) {
               setRenderMode('record')
               return renderAyahVideo(args)
             }

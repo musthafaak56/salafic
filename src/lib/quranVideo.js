@@ -115,7 +115,7 @@ function drawArabicLine(ctx, line, cx, y, w0, w1) {
 // line budget and its total height within availableHeight.
 function fitMl(ctx, text, maxWidth, maxLines, availableHeight, fontFamily) {
   let best = null
-  for (const size of [44, 40, 38, 36, 34, 32, 30, 28, 26, 24, 22]) {
+  for (const size of [48, 44, 40, 38, 36, 34, 32, 30, 28, 26, 24, 22]) {
     ctx.font = `500 ${size}px ${fontFamily}`
     const lines = wrapLines(ctx, text, maxWidth)
     const leading = Math.round(size * 1.55)
@@ -259,7 +259,8 @@ function drawSlide(ctx, { surahLabel, surahNumber, ayah, index, total, words, ac
 
   const translationTop = arabicBottom + 168
   const mlText = (ayah.translationMl || ayah.translation || '').replace(/\r\n/g, ' ').trim()
-  const fit = fitMl(ctx, mlText, 800, 4, 1640 - translationTop - 40, f.ml)
+  const glossReserve = hasWords && words.ml.length > 0 ? 170 : 0
+  const fit = fitMl(ctx, mlText, 800, 4, 1640 - translationTop - 40 - glossReserve, f.ml)
   ctx.font = `500 ${fit.size}px ${f.ml}`
   ctx.fillStyle = 'rgba(247, 244, 239, 0.92)'
   fit.lines.forEach((line, i) => {
@@ -270,7 +271,7 @@ function drawSlide(ctx, { surahLabel, surahNumber, ayah, index, total, words, ac
     if (glossActive >= 0) {
       const text = (words.ml[glossActive] || '').replace(/\r\n/g, ' ').trim()
       if (text && text !== '*') {
-        drawActiveGloss(ctx, text, translationTop + fit.lines.length * fit.leading + 14, f.ml)
+        drawActiveGloss(ctx, text, translationTop + fit.lines.length * fit.leading + 80, f.ml)
       }
     }
   }
@@ -534,6 +535,20 @@ const AUDIO_BITRATE = 128_000
 const VIDEO_CODECS = ['avc1.640028', 'avc1.4d401e', 'avc1.42e01e', 'avc1.42001f']
 const LEAD_IN = 0.3
 
+// Renders a slideshow offline; the steps below are checkpointed to
+// sessionStorage, which survives the page reload Safari performs when the tab
+// is killed (e.g. running out of memory on iOS). After a crash-reload the app
+// can read the last completed step to tell the user exactly where it died.
+const DEBUG_STEP_KEY = '__salaficRenderStep'
+function debugStep(step, extra = '') {
+  const line = `${Date.now() % 100000}:${step}${extra ? ' ' + extra : ''}`
+  try {
+    sessionStorage.setItem(DEBUG_STEP_KEY, line)
+  } catch {}
+  ;(window.__videoDebug = window.__videoDebug || []).push(line)
+  console.debug('[salafic render]', line)
+}
+
 export function hasOfflineSupport() {
   return (
     typeof VideoEncoder === 'function' &&
@@ -594,6 +609,12 @@ export async function renderAyahVideoOffline({
   fonts,
 }) {
   if (!hasOfflineSupport()) throw new Error('no-support')
+
+  try {
+    sessionStorage.removeItem(DEBUG_STEP_KEY)
+  } catch {}
+  window.__videoDebug = []
+  debugStep('start', `${surahNumber} ${ayahs.length} ayahs ${reciter}`)
 
   onProgress?.({ phase: 'fetch', done: 0, total: ayahs.length })
   const karaokeP = loadKaraoke(reciter).catch(() => null)
@@ -662,6 +683,7 @@ export async function renderAyahVideoOffline({
   const sampleRate = decoded[0].buffer.sampleRate
   const channels = decoded[0].buffer.numberOfChannels
   const totalSamples = Math.max(1, Math.ceil(totalDur * sampleRate))
+  debugStep('decoded', `${Math.round(totalDur)}s ${channels}ch ${sampleRate}Hz`)
   const pcm = Array.from({ length: channels }, () => new Float32Array(totalSamples))
   for (const d of decoded) {
     const startSample = Math.round(d.audioAt * sampleRate)
@@ -684,6 +706,7 @@ export async function renderAyahVideoOffline({
   const videoCodec = await pickVideoCodec(W, H)
   const audioCodec = await pickAudioCodec(sampleRate, channels)
   if (!videoCodec || !audioCodec) throw new Error('no-codec')
+  debugStep('codecs', `${videoCodec} + ${audioCodec}`)
 
   const output = new Output({
     format: new Mp4OutputFormat({ fastStart: 'in-memory' }),
@@ -718,7 +741,8 @@ export async function renderAyahVideoOffline({
     height: H,
     bitrate: VIDEO_BITRATE,
     framerate: OFFLINE_FPS,
-    latencyMode: 'quality',
+    latencyMode: 'realtime',
+    avc: { format: 'avc' },
   })
 
   const audioEncoder = new AudioEncoder({
@@ -759,9 +783,10 @@ export async function renderAyahVideoOffline({
       })
       audioEncoder.encode(audioData)
       audioData.close()
-      if (audioEncoder.encodeQueueSize > 12) await drain()
+      if (audioEncoder.encodeQueueSize > 4) await drain()
     }
     await drain()
+    debugStep('audio-encoded')
     pcm.length = 0
 
     const frameCount = Math.max(1, Math.round(totalDur * OFFLINE_FPS))
@@ -799,10 +824,11 @@ export async function renderAyahVideoOffline({
       })
       videoEncoder.encode(frame)
       frame.close()
-      if (videoEncoder.encodeQueueSize > 12) await drain()
-      if (pending.length >= 64) await drain()
+      if (videoEncoder.encodeQueueSize > 4) await drain()
+      if (pending.length >= 32) await drain()
       if (i % 24 === 0 || i === frameCount - 1) {
         onProgress?.({ phase: 'render', done: i + 1, total: frameCount })
+        debugStep('frames', `${i + 1}/${frameCount}`)
       }
     }
     await drain()
@@ -811,9 +837,12 @@ export async function renderAyahVideoOffline({
     await audioEncoder.flush()
     videoSource.close()
     audioSource.close()
+    debugStep('flushed')
     await output.finalize()
     if (encError) throw new Error('encode-error')
+    debugStep('muxed', `${output.target.buffer.byteLength} bytes`)
     const blob = new Blob([output.target.buffer], { type: 'video/mp4' })
+    debugStep('blob-ready')
     return { blob, ext: 'mp4' }
   } catch (err) {
     try {
