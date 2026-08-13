@@ -299,6 +299,36 @@ function drawSlide(ctx, { surahLabel, surahNumber, ayah, index, total, words, ac
   }
 }
 
+// Two-byte AudioSpecificConfig for AAC-LC (MPEG-4 object type 2). WebKit
+// emits an invalid description (object type 0, 0 channels) in the encoder
+// output metadata (https://bugs.webkit.org/show_bug.cgi?id=302253), which
+// makes every player mute the audio track, so we always rebuild it from the
+// sample rate and channel count we configured.
+function makeAacAsc(sampleRate, channels) {
+  const index =
+    sampleRate >= 96000 ? 0 : sampleRate >= 88200 ? 1 : sampleRate >= 64000 ? 2
+    : sampleRate >= 48000 ? 3 : sampleRate >= 44100 ? 4 : sampleRate >= 32000 ? 5
+    : sampleRate >= 24000 ? 6 : sampleRate >= 22050 ? 7 : sampleRate >= 16000 ? 8
+    : sampleRate >= 12000 ? 9 : sampleRate >= 11025 ? 10 : sampleRate >= 8000 ? 11 : 12
+  return Uint8Array.of((2 << 3) | (index >> 1), ((index & 1) << 7) | (channels << 3))
+}
+
+// Returns a sanitised copy of the encoder output metadata for muxing, with
+// the AAC description and audio parameters replaced by the known-good values.
+function sanitizeAudioMeta(meta, sampleRate, channels) {
+  if (!meta?.decoderConfig) return meta
+  const dc = meta.decoderConfig
+  const bad =
+    !dc.description ||
+    dc.description.byteLength < 2 ||
+    (dc.description[0] >> 3) === 0 ||
+    !dc.numberOfChannels ||
+    !dc.sampleRate
+  if (!bad) return meta
+  const copy = { ...meta, decoderConfig: { ...dc, description: makeAacAsc(sampleRate, channels), sampleRate, numberOfChannels: channels } }
+  return copy
+}
+
 async function ensureAudioRunning(audio) {
   if (audio.state === 'running') return
   if (audio.state === 'closed') throw new Error('audio-blocked')
@@ -758,7 +788,8 @@ export async function renderAyahVideoOffline({
   })
 
   const audioEncoder = new AudioEncoder({
-    output: (chunk, meta) => pending.push(audioSource.add(EncodedPacket.fromEncodedChunk(chunk), meta)),
+    output: (chunk, meta) =>
+      pending.push(audioSource.add(EncodedPacket.fromEncodedChunk(chunk), sanitizeAudioMeta(meta, sampleRate, channels))),
     error: (e) => {
       encError = e
     },
