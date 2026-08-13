@@ -619,6 +619,14 @@ export async function renderAyahVideoOffline({
   onProgress?.({ phase: 'fetch', done: 0, total: ayahs.length })
   const karaokeP = loadKaraoke(reciter).catch(() => null)
   const surahAud = surahMode(reciter)
+
+  if (!audio) {
+    const AC = window.AudioContext || window.webkitAudioContext
+    if (!AC) throw new Error('no-support')
+    audio = new AC()
+    audio.resume().catch(() => {})
+  }
+
   let surahData = null
   const raw = []
   if (surahAud) {
@@ -646,10 +654,16 @@ export async function renderAyahVideoOffline({
   const words = ayahs.map((ayah) =>
     karaoke ? ayahWords(karaoke.timings, karaoke.ml, surahNumber, ayah.number, ayah.arabic) : null,
   )
+  debugStep('decoded-begin')
 
+  let totalSampleRate = 0
+  let totalChannels = 0
   let decoded
   if (surahAud) {
     const buf = await decodeBuffer(audio, surahData)
+    surahData = null
+    totalSampleRate = buf.sampleRate
+    totalChannels = buf.numberOfChannels
     decoded = ayahs.map((ayah, i) => {
       const w = words[i]
       if (!w || typeof w.startMs !== 'number' || typeof w.endMs !== 'number') {
@@ -659,7 +673,13 @@ export async function renderAyahVideoOffline({
     })
   } else {
     const bufs = []
-    for (const data of raw) bufs.push(await decodeBuffer(audio, data))
+    for (const data of raw) {
+      const buf = await decodeBuffer(audio, data)
+      totalSampleRate = buf.sampleRate
+      totalChannels = buf.numberOfChannels
+      bufs.push(buf)
+    }
+    raw.length = 0
     decoded = ayahs.map((ayah, i) => ({
       buffer: bufs[i],
       start: 0,
@@ -680,28 +700,15 @@ export async function renderAyahVideoOffline({
   const totalDur = t - PAD + LEAD_IN + TAIL
   if (totalDur > MAX_SECONDS) throw new Error('too-long')
 
-  const sampleRate = decoded[0].buffer.sampleRate
-  const channels = decoded[0].buffer.numberOfChannels
+  const sampleRate = totalSampleRate
+  const channels = totalChannels
   const totalSamples = Math.max(1, Math.ceil(totalDur * sampleRate))
-  debugStep('decoded', `${Math.round(totalDur)}s ${channels}ch ${sampleRate}Hz`)
-  const pcm = Array.from({ length: channels }, () => new Float32Array(totalSamples))
-  for (const d of decoded) {
-    const startSample = Math.round(d.audioAt * sampleRate)
-    const srcStart = Math.round(d.start * sampleRate)
-    const count = Math.min(Math.round(d.dur * sampleRate), d.buffer.length - srcStart)
-    if (count <= 0) continue
-    for (let c = 0; c < channels; c++) {
-      pcm[c].set(d.buffer.getChannelData(c).subarray(srcStart, srcStart + count), startSample)
-    }
-  }
-  // Release the decoded audio now that its windows are copied into the timeline.
-  // On iOS the whole-surah buffer is hundreds of MB; keeping it alive while the
-  // frames are encoded pushes the tab over Safari's memory limit, which kills
-  // the page and reloads it instead of ever showing the video.
+  debugStep('decoded', `${Math.round(totalDur)}s ${channels}ch ${sampleRate}Hz ${decoded.length} wins`)
+  // Windows are read straight from the decoded buffers while the audio is
+  // encoded; the timeline is never materialised as a full second PCM copy.
+  // The whole-surah decode can be hundreds of MB on iOS, so the buffers are
+  // released the moment the audio track is done, before frames start encoding.
   const slides = decoded.map((d, i) => ({ slideAt: d.slideAt, dur: d.dur, words: d.words, index: i }))
-  decoded = null
-  surahData = null
-  raw.length = 0
 
   const videoCodec = await pickVideoCodec(W, H)
   const audioCodec = await pickAudioCodec(sampleRate, channels)
@@ -761,7 +768,7 @@ export async function renderAyahVideoOffline({
   try {
     onProgress?.({ phase: 'render', done: 0, total: 1 })
 
-    // Audio first: the encoded packets are tiny, and the PCM timeline (the
+    // Audio first: the encoded packets are tiny, and the decoded windows (the
     // largest remaining allocation) can be dropped before video frames start
     // accumulating in memory.
     const audioChunk = Math.max(1024, Math.round(sampleRate * 0.5))
@@ -769,9 +776,17 @@ export async function renderAyahVideoOffline({
       if (encError) throw new Error('encode-error')
       const n = Math.min(audioChunk, totalSamples - pos)
       const data = new Float32Array(n * channels)
-      for (let c = 0; c < channels; c++) {
-        const ch = pcm[c].subarray(pos, pos + n)
-        for (let j = 0; j < n; j++) data[j * channels + c] = ch[j]
+      const sec = pos / sampleRate
+      const d = decoded.find((w) => sec >= w.audioAt && sec < w.audioAt + w.dur)
+      if (d) {
+        const startOff = Math.round(d.start * sampleRate)
+        const local = Math.round((sec - d.audioAt) * sampleRate) + startOff
+        const winRemain = Math.round(d.dur * sampleRate) - (local - startOff)
+        const avail = Math.max(0, Math.min(n, winRemain, d.buffer.length - local))
+        for (let c = 0; c < channels; c++) {
+          const src = d.buffer.getChannelData(c)
+          for (let j = 0; j < avail; j++) data[j * channels + c] = src[local + j]
+        }
       }
       const audioData = new AudioData({
         format: 'f32',
@@ -787,7 +802,7 @@ export async function renderAyahVideoOffline({
     }
     await drain()
     debugStep('audio-encoded')
-    pcm.length = 0
+    decoded = null
 
     const frameCount = Math.max(1, Math.round(totalDur * OFFLINE_FPS))
     let curSlide = null
