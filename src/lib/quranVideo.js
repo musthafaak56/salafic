@@ -198,7 +198,68 @@ function ornament(ctx, cx, y, spread) {
   ctx.fill()
 }
 
-function drawSlide(ctx, { surahLabel, surahNumber, ayah, index, total, words, active, fonts, reciterLabel }) {
+// Computes real peak amplitudes across the whole video timeline from the
+// decoded audio windows (silence gaps between ayahs stay near zero), so the
+// waveform drawn on each frame is the actual audio being recorded.
+function timelinePeaks(windows, totalDur, barCount = 96) {
+  const peaks = new Float32Array(barCount)
+  if (!windows.length || totalDur <= 0) return peaks
+  const sr = windows[0].buffer.sampleRate
+  for (let b = 0; b < barCount; b++) {
+    const t0 = (b / barCount) * totalDur
+    const t1 = ((b + 1) / barCount) * totalDur
+    let max = 0
+    for (const w of windows) {
+      const wa = w.audioAt
+      const we = wa + w.dur
+      if (we <= t0 || wa >= t1) continue
+      const local0 = Math.max(0, t0 - wa)
+      const local1 = Math.min(w.dur, t1 - wa)
+      const data = w.buffer
+      const channels = data.numberOfChannels
+      const n = Math.floor((local1 - local0) * sr)
+      const step = Math.max(1, Math.floor(n / 48))
+      for (let s = 0; s < n; s += step) {
+        const idx = Math.round(w.start * sr + local0 * sr + s)
+        if (idx < 0 || idx >= data.length) continue
+        let v = 0
+        for (let c = 0; c < channels; c++) {
+          const a = Math.abs(data.getChannelData(c)[idx])
+          if (a > v) v = a
+        }
+        if (v > max) max = v
+      }
+    }
+    peaks[b] = max
+  }
+  let top = 0
+  for (const p of peaks) if (p > top) top = p
+  if (top > 0) {
+    for (let i = 0; i < barCount; i++) peaks[i] = Math.pow(peaks[i] / top, 0.55)
+  }
+  return peaks
+}
+
+// Draws the waveform strip near the bottom of a frame; bars up to `fraction`
+// of the timeline are gold, the rest muted, so the video itself shows
+// playback progress that looks like the audio it carries.
+function drawWaveform(ctx, peaks, fraction, S) {
+  const barW = Math.max(2, Math.round(5 * S))
+  const gap = Math.max(2, Math.round(3 * S))
+  const totalW = peaks.length * (barW + gap) - gap
+  const x0 = Math.round((W - totalW) / 2)
+  const centerY = Math.round(1852 * S)
+  const maxH = Math.round(52 * S)
+  const minH = Math.round(8 * S)
+  for (let i = 0; i < peaks.length; i++) {
+    const h = Math.max(minH, Math.round(peaks[i] * maxH))
+    const played = i / peaks.length <= fraction
+    ctx.fillStyle = played ? GOLD : 'rgba(247, 244, 239, 0.32)'
+    ctx.fillRect(x0 + i * (barW + gap), centerY - h / 2, barW, h)
+  }
+}
+
+function drawSlide(ctx, { surahLabel, surahNumber, ayah, index, total, words, active, fonts, reciterLabel, waveform }) {
   const f = fonts || DEFAULT_FONTS
   const S = H / 1920
   ctx.fillStyle = NAVY
@@ -301,6 +362,10 @@ function drawSlide(ctx, { surahLabel, surahNumber, ayah, index, total, words, ac
     ctx.font = `500 ${Math.round(17 * S)}px "Satoshi"`
     ctx.fillText(reciterLabel.toUpperCase(), W / 2, 1750 * S)
   }
+
+  if (waveform && waveform.peaks?.length) {
+    drawWaveform(ctx, waveform.peaks, waveform.fraction, S)
+  }
 }
 
 // Two-byte AudioSpecificConfig for AAC-LC (MPEG-4 object type 2). WebKit
@@ -383,6 +448,8 @@ export async function renderAyahVideo({ surahNumber, surahLabel, ayahs, reciter,
     const slides = []
     let play = null
     let t = audio.currentTime + 0.3
+    let surahBuf = null
+    let perAyahBufs = null
 
     const dest = audio.createMediaStreamDestination()
     const master = audio.createGain()
@@ -432,6 +499,12 @@ export async function renderAyahVideo({ surahNumber, surahLabel, ayahs, reciter,
         },
       }
 
+      // The <audio> element streams the file without exposing samples, so a
+      // separate decode is needed for the real waveform peaks.
+      const surahRes = await fetch(surahAudioUrl(reciter, surahNumber))
+      if (!surahRes.ok) throw new Error(`Could not fetch surah ${surahNumber} audio`)
+      surahBuf = await decodeBuffer(audio, await surahRes.arrayBuffer())
+
       t = audio.currentTime + 0.3
       for (let i = 0; i < total; i++) {
         slides.push({ start: t, ayah: ayahs[i], words: windows[i].words })
@@ -450,6 +523,7 @@ export async function renderAyahVideo({ surahNumber, surahLabel, ayahs, reciter,
           return decoded
         })(),
       ])
+      perAyahBufs = decoded
 
       const seconds =
         decoded.reduce((sum, b) => sum + b.duration, 0) + PAD * (decoded.length - 1) + TAIL
@@ -499,6 +573,20 @@ export async function renderAyahVideo({ surahNumber, surahLabel, ayahs, reciter,
     })
 
     const t0 = audio.currentTime
+    // Real waveform of the recording: one decoded window per ayah placed at
+    // its timeline offset, then peak amplitudes over the whole duration.
+    const waveWindows = slides.map((s, i) => ({
+      buffer: surahBuf || perAyahBufs?.[i] || null,
+      start: surahBuf ? windows[i].start : 0,
+      dur: surahBuf ? windows[i].dur : perAyahBufs?.[i]?.duration || 0,
+      audioAt: s.start - t0,
+    }))
+    const peaks = timelinePeaks(
+      waveWindows.filter((w) => w.buffer),
+      totalDur,
+    )
+    surahBuf = null
+    perAyahBufs = null
     play?.start()
     recorder.start(250)
     await new Promise((resolve, reject) => {
@@ -555,6 +643,7 @@ export async function renderAyahVideo({ surahNumber, surahLabel, ayahs, reciter,
           active: lastActive,
           fonts,
           reciterLabel,
+          waveform: { peaks, fraction: Math.min(1, elapsed / totalDur) },
         })
         onProgress?.({ phase: 'render', done: Math.min(1, elapsed / totalDur) })
         raf = requestAnimationFrame(frame)
@@ -842,6 +931,12 @@ export async function renderAyahVideoOffline({
     }
     await drain()
     debugStep('audio-encoded')
+    // Real waveform of the whole timeline, computed while the decoded windows
+    // are still in memory, then the buffers are released before frames start.
+    const peaks = timelinePeaks(
+      decoded.map((d) => ({ buffer: d.buffer, start: d.start, dur: d.dur, audioAt: d.audioAt })),
+      totalDur,
+    )
     decoded = null
 
     const frameCount = Math.max(1, Math.round(totalDur * OFFLINE_FPS))
@@ -872,6 +967,7 @@ export async function renderAyahVideoOffline({
         active: lastActive,
         fonts,
         reciterLabel,
+        waveform: { peaks, fraction: Math.min(1, elapsed / totalDur) },
       })
       const frame = new VideoFrame(canvas, {
         timestamp: Math.round(elapsed * 1e6),
