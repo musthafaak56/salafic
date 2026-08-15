@@ -258,8 +258,6 @@ function drawSlide(ctx, { surahLabel, surahNumber, ayah, index, total, words, ac
 
   const activeIdx = typeof active === 'number' && active >= 0 ? active : -1
   const activeSeg = activeIdx >= 0 ? words?.segs?.[activeIdx] : null
-  const w0 = activeSeg ? activeSeg[0] : -1
-  const w1 = activeSeg ? activeSeg[1] : -1
 
   const hasWords = words && words.ar.length > 0
   if (hasWords) {
@@ -273,19 +271,24 @@ function drawSlide(ctx, { surahLabel, surahNumber, ayah, index, total, words, ac
     ctx.font = `600 ${fit.size}px ${f.ar}`
     const arabicTop = (showBasmala ? 712 : 640) * S
     const lineIndex = activeLineOf(lines, activeSeg)
+    const waiting = !activeSeg
     const fragments = sentenceSplits(
       lines,
       words.segs,
       words.ml,
       ayah.translationMl || ayah.translation || '',
     )
-    lines.forEach((line, i) => {
-      drawArabicLine(ctx, line, W / 2, arabicTop + i * fit.leading, i === lineIndex ? w0 : -1, i === lineIndex ? w1 : -1, i !== lineIndex)
-      const frag = fragments[i]
-      if (frag) {
-        drawMlFragment(ctx, frag, W / 2, arabicTop + i * fit.leading + 38 * S, 900 * S, S, f.ml, i !== lineIndex)
-      }
-    })
+    // Only the line being recited is shown at a time, whole (no word-by-word
+    // split): dimmed as the up-next line before its words begin, then gold
+    // while it is recited. It stays centered in the block so the view holds
+    // steady as the recitation moves line to line.
+    const li = Math.min(lineIndex, lines.length - 1)
+    const lineY = Math.round(arabicTop + ((lines.length - 1) * fit.leading) / 2)
+    drawArabicLine(ctx, lines[li], W / 2, lineY, waiting ? -1 : 0, waiting ? -1 : 9999, waiting)
+    const frag = fragments[li]
+    if (frag) {
+      drawMlFragment(ctx, frag, W / 2, lineY + 38 * S, 900 * S, S, f.ml, waiting)
+    }
   } else {
     const fit = fitArabic(ctx, ayah.arabic, 900 * S, 4, f.ar)
     const arabicTop = (showBasmala ? 712 : 640) * S

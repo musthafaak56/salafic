@@ -781,39 +781,36 @@ export default function Quran() {
                     style={{ fontFamily: fontPair.ar, fontSize: arabicWrap.size, lineHeight: `${arabicWrap.leading}px` }}
                     className="font-arabic text-ink"
                   >
-                    {arabicWrap.lines.map((line, li) => (
-                      <div
-                        key={li}
-                        className={`transition-opacity duration-300 ${
-                          li === lineIndex ? '' : 'opacity-40'
-                        }`}
-                      >
-                        {line.map((unit) => (
-                          <span
-                            key={unit.i}
-                            className={`inline-block transition-colors duration-200 ${
-                              activeSeg && unit.i >= activeSeg[0] && unit.i < activeSeg[1]
-                                ? 'text-gold'
-                                : ''
-                            }`}
-                          >
-                            {unit.text}
-                            {unit !== line[line.length - 1] ? '\u00A0' : ''}
-                          </span>
-                        ))}
-                        {mlSplits[li] ? (
-                          <p
-                            dir="ltr"
-                            style={{ fontFamily: fontPair.ml }}
-                            className={`mt-1 font-malayalam text-lg leading-relaxed font-semibold transition-colors duration-300 sm:text-xl ${
-                              li === lineIndex ? 'text-gold' : 'text-ink/75'
-                            }`}
-                          >
-                            {mlSplits[li]}
-                          </p>
-                        ) : null}
-                      </div>
-                    ))}
+                    <div
+                      className={`transition-opacity duration-300 ${
+                        activeSeg ? '' : 'opacity-40'
+                      }`}
+                    >
+                      {arabicWrap.lines[lineIndex].map((unit) => (
+                        <span
+                          key={unit.i}
+                          className={`inline-block transition-colors duration-200 ${
+                            activeSeg ? 'text-gold' : ''
+                          }`}
+                        >
+                          {unit.text}
+                          {unit !== arabicWrap.lines[lineIndex][arabicWrap.lines[lineIndex].length - 1]
+                            ? '\u00A0'
+                            : ''}
+                        </span>
+                      ))}
+                      {mlSplits[lineIndex] ? (
+                        <p
+                          dir="ltr"
+                          style={{ fontFamily: fontPair.ml }}
+                          className={`mt-1 font-malayalam text-lg leading-relaxed font-semibold transition-colors duration-300 sm:text-xl ${
+                            activeSeg ? 'text-gold' : 'text-ink/75'
+                          }`}
+                        >
+                          {mlSplits[lineIndex]}
+                        </p>
+                      ) : null}
+                    </div>
                   </div>
                 ) : null}
               </div>
