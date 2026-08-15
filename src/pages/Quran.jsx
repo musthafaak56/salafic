@@ -824,20 +824,35 @@ export default function Quran() {
                   </p>
                 ) : null}
                 {glossRow[lineIndex]?.length ? (
-                  <p
+                  <div
                     dir="ltr"
-                    style={{ fontFamily: fontPair.ml, fontSize: arabicWrap ? `${Math.max(13, Math.round(arabicWrap.size * 0.45))}px` : undefined, marginTop: '10px' }}
-                    className="font-malayalam leading-relaxed"
+                    style={{ marginTop: '14px' }}
+                    className="flex flex-wrap gap-y-2 gap-x-2 leading-none"
                   >
-                    {glossRow[lineIndex].map((g, gi) => (
-                      <span
-                        key={gi}
-                        className={`mr-2 inline-block ${activeSeg && g.segIndex === activeWordIndex ? 'text-gold' : 'text-ink/55'}`}
-                      >
-                        {g.text}
-                      </span>
-                    ))}
-                  </p>
+                    {glossRow[lineIndex].map((g, gi) => {
+                      const active = !!activeSeg && g.segIndex === activeWordIndex
+                      const fs = arabicWrap ? Math.max(13, Math.round(arabicWrap.size * 0.45)) : 14
+                      return (
+                        <span
+                          key={gi}
+                          style={{
+                            fontFamily: fontPair.ml,
+                            fontSize: fs,
+                            padding: `${Math.round(fs * 0.42)}px ${Math.round(fs * 0.9)}px`,
+                            borderRadius: '999px',
+                            borderWidth: '1.5px',
+                            borderStyle: 'solid',
+                            borderColor: active ? 'var(--color-gold)' : 'rgba(185, 138, 47, 0.55)',
+                            backgroundColor: active ? 'var(--color-gold)' : 'var(--color-gold-soft)',
+                            color: active ? 'var(--color-ink)' : 'var(--color-gold)',
+                            fontWeight: 500,
+                          }}
+                        >
+                          {g.text}
+                        </span>
+                      )
+                    })}
+                  </div>
                 ) : null}
               </div>
             </div>

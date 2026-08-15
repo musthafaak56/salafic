@@ -149,18 +149,22 @@ function drawMlFragment(ctx, text, cx, top, width, S, fontFamily, dim, maxSize) 
   return top + (fit.lines.length - 1) * fit.leading + fit.size * 0.4
 }
 
-// Draws the word-by-word Malayalam glosses of one line as a row of tokens
-// below the sentence; the gloss of the segment being recited is gold.
+// Draws the word-by-word Malayalam glosses of one line as gold pill chips under
+// the sentence, in the style of the original word-gloss chip; the gloss of the
+// segment being recited fills solid gold so the karaoke sync stays visible.
 function drawGlossRow(ctx, glosses, cx, top, width, size, fontFamily, activeSegIndex, S, waiting) {
   if (!glosses.length) return
-  ctx.font = `500 ${Math.round(size * S)}px ${fontFamily}`
-  const gap = Math.round(size * S * 1.4)
+  const fs = Math.round(size * S)
+  ctx.font = `600 ${fs}px ${fontFamily}`
+  const gap = Math.round(10 * S)
+  const padX = Math.round(fs * 0.9)
+  const h = Math.round(fs * 2.0)
   const tokens = glosses.map((g) => ({ g, w: ctx.measureText(g.text).width }))
   const rows = []
   let cur = []
   let curW = 0
   for (const t of tokens) {
-    const add = t.w + (cur.length ? gap : 0)
+    const add = t.w + padX * 2 + (cur.length ? gap : 0)
     if (cur.length && curW + add > width) {
       rows.push(cur)
       cur = [t]
@@ -171,17 +175,28 @@ function drawGlossRow(ctx, glosses, cx, top, width, size, fontFamily, activeSegI
     }
   }
   if (cur.length) rows.push(cur)
-  const leading = Math.round(size * S * 1.55)
+  const leading = Math.round(h * 1.18)
   rows.slice(0, 2).forEach((row, ri) => {
-    const totalW = row.reduce((s, t) => s + t.w, 0) + gap * (row.length - 1)
+    const totalW = row.reduce((s, t) => s + t.w + padX * 2, 0) + gap * (row.length - 1)
     let x = cx - totalW / 2
+    const y = top + ri * leading
     for (const t of row) {
       const active = !waiting && t.g.segIndex === activeSegIndex
-      ctx.fillStyle = active ? GOLD : 'rgba(247, 244, 239, 0.72)'
-      ctx.textAlign = 'left'
-      ctx.fillText(t.g.text, x, top + ri * leading)
+      const bw = t.w + padX * 2
+      ctx.beginPath()
+      if (ctx.roundRect) ctx.roundRect(x, y, bw, h, h / 2)
+      else ctx.rect(x, y, bw, h)
+      ctx.fillStyle = active ? GOLD : 'rgba(194, 147, 60, 0.10)'
+      ctx.fill()
+      ctx.strokeStyle = active ? GOLD : 'rgba(194, 147, 60, 0.55)'
+      ctx.lineWidth = 2
+      ctx.stroke()
+      ctx.fillStyle = active ? NAVY : GOLD
       ctx.textAlign = 'center'
-      x += t.w + gap
+      ctx.textBaseline = 'middle'
+      ctx.fillText(t.g.text, x + bw / 2, y + h / 2)
+      ctx.textBaseline = 'alphabetic'
+      x += bw + gap
     }
   })
 }
@@ -332,7 +347,7 @@ function drawSlide(ctx, { surahLabel, surahNumber, ayah, index, total, words, ac
     const glosses = lineGlosses(lines[li], words.segs, words.ml)
     if (glosses.length) {
       const glossSize = Math.max(13, Math.round(fit.size * 0.45))
-      drawGlossRow(ctx, glosses, W / 2 + 4 * S, Math.round(fragBottom + 8 * S), 820 * S, glossSize, f.ml, activeIdx, S, waiting)
+      drawGlossRow(ctx, glosses, W / 2 + 4 * S, Math.round(fragBottom + 12 * S), 820 * S, glossSize, f.ml, activeIdx, S, waiting)
     }
   } else {
     const fit = fitArabic(ctx, ayah.arabic, 900 * S, 4, f.ar)
