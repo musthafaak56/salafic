@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   ArrowClockwise,
   DownloadSimple,
@@ -17,7 +17,8 @@ import {
   fetchSurahTexts,
 } from '../lib/quran'
 import { renderAyahVideo, renderAyahVideoOffline, hasOfflineSupport } from '../lib/quranVideo'
-import { loadKaraoke, ayahWords, activeWord, effectiveGloss } from '../lib/karaoke'
+import { loadKaraoke, ayahWords, activeWord } from '../lib/karaoke'
+import { fitArabicWords, activeLineOf, sentenceSplits } from '../lib/wordWrap'
 import AppHeader from '../components/AppHeader'
 import LoadingState from '../components/LoadingState'
 
@@ -50,6 +51,40 @@ export default function Quran() {
     () => localStorage.getItem('salafic-font-pair') || FONT_PAIRS[0].id,
   )
   const fontPair = FONT_PAIRS.find((p) => p.id === fontPairId) || FONT_PAIRS[0]
+
+  // Shared canvas for measuring Arabic words with the exact same font ladder
+  // as the video renderer, so the line revealed on the page is the same line
+  // revealed in the video at the same moment.
+  const measureCtxRef = useRef(null)
+  if (!measureCtxRef.current && typeof document !== 'undefined') {
+    measureCtxRef.current = document.createElement('canvas').getContext('2d')
+  }
+
+  const arabicWrap = useMemo(() => {
+    const words = nowWords?.words
+    if (!words?.ar?.length || !measureCtxRef.current) return null
+    return fitArabicWords(
+      measureCtxRef.current,
+      words.ar.map((text, i) => ({ text, i })),
+      fontPair.ar,
+    )
+  }, [nowWords, fontPair])
+
+  const activeSeg =
+    nowWords && activeWordIndex >= 0 ? nowWords.words.segs[activeWordIndex] : null
+  const lineIndex = arabicWrap ? activeLineOf(arabicWrap.lines, activeSeg) : -1
+
+  // Real Malayalam sentence split into fragments that pair with each wrapped
+  // Arabic line, verified against the word-by-word glosses.
+  const mlSplits = useMemo(() => {
+    if (!arabicWrap || !nowWords?.words?.ml?.length || !nowWords.translation) return []
+    return sentenceSplits(
+      arabicWrap.lines,
+      nowWords.words.segs,
+      nowWords.words.ml,
+      nowWords.translation,
+    )
+  }, [arabicWrap, nowWords])
 
   const audioRef = useRef(null)
   const playQueueRef = useRef([])
@@ -740,46 +775,47 @@ export default function Quran() {
                     بِسْمِ ٱللَّهِ ٱلرَّحْمَٰنِ ٱلرَّحِيمِ
                   </p>
                 ) : null}
-                <p
-                  dir="rtl"
-                  style={{ fontFamily: fontPair.ar }}
-                  className="font-arabic text-2xl leading-[2.2] text-ink sm:text-3xl sm:leading-[2.2]"
-                >
-                  {nowWords.words.ar.map((word, i) => {
-                    const seg = nowWords.words.segs[activeWordIndex]
-                    const active = seg && i >= seg[0] && i < seg[1]
-                    return (
-                      <span
-                        key={i}
-                        className={`inline-block transition-colors duration-200 ${
-                          active ? 'text-gold' : ''
+                {arabicWrap ? (
+                  <div
+                    dir="rtl"
+                    style={{ fontFamily: fontPair.ar, fontSize: arabicWrap.size, lineHeight: `${arabicWrap.leading}px` }}
+                    className="font-arabic text-ink"
+                  >
+                    {arabicWrap.lines.map((line, li) => (
+                      <div
+                        key={li}
+                        className={`transition-opacity duration-300 ${
+                          li === lineIndex ? '' : 'opacity-40'
                         }`}
                       >
-                        {word}
-                        {i < nowWords.words.ar.length - 1 ? '\u00A0' : ''}
-                      </span>
-                    )
-                  })}
-                </p>
-                <p
-                  style={{ fontFamily: fontPair.ml }}
-                  className="mt-4 font-malayalam text-xl leading-relaxed text-ink sm:text-2xl"
-                >
-                  {nowWords.translation}
-                </p>
-                {(() => {
-                  const glossIndex = effectiveGloss(nowWords.words.ml, activeWordIndex)
-                  if (glossIndex < 0 || !nowWords.words.ml[glossIndex]) return null
-                  const gloss = nowWords.words.ml[glossIndex].replace(/\r\n/g, ' ').trim()
-                  return gloss && gloss !== '*' ? (
-                    <p
-                      style={{ fontFamily: fontPair.ml }}
-                      className="mt-3 inline-block rounded-full border border-gold/60 bg-gold/10 px-5 py-1.5 font-malayalam text-lg font-semibold text-gold sm:text-xl"
-                    >
-                      {gloss}
-                    </p>
-                  ) : null
-                })()}
+                        {line.map((unit) => (
+                          <span
+                            key={unit.i}
+                            className={`inline-block transition-colors duration-200 ${
+                              activeSeg && unit.i >= activeSeg[0] && unit.i < activeSeg[1]
+                                ? 'text-gold'
+                                : ''
+                            }`}
+                          >
+                            {unit.text}
+                            {unit !== line[line.length - 1] ? '\u00A0' : ''}
+                          </span>
+                        ))}
+                        {mlSplits[li] ? (
+                          <p
+                            dir="ltr"
+                            style={{ fontFamily: fontPair.ml }}
+                            className={`mt-1 font-malayalam text-lg leading-relaxed font-semibold transition-colors duration-300 sm:text-xl ${
+                              li === lineIndex ? 'text-gold' : 'text-ink/75'
+                            }`}
+                          >
+                            {mlSplits[li]}
+                          </p>
+                        ) : null}
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
               </div>
             </div>
           ) : null}

@@ -1,6 +1,7 @@
 import { ayahUrl, surahAudioUrl, surahMode } from './quran'
 import { FONT_PAIRS } from './quran'
-import { loadKaraoke, ayahWords, activeWord, effectiveGloss } from './karaoke'
+import { loadKaraoke, ayahWords, activeWord } from './karaoke'
+import { wrapWords, activeLineOf, sentenceSplits, fitArabicWords, TEXT_SIZES } from './wordWrap'
 import {
   Output,
   Mp4OutputFormat,
@@ -50,8 +51,7 @@ function wrapLines(ctx, text, maxWidth) {
 }
 
 // Shared size ladder for both scripts so the Arabic line and the Malayalam
-// sentence render at the same visual size.
-const TEXT_SIZES = [48, 44, 40, 38, 36, 34, 32, 30, 28, 26, 24, 22]
+// sentence render at the same visual size (TEXT_SIZES imported from wordWrap).
 
 function fitArabic(ctx, text, maxWidth, maxLines, fontFamily) {
   for (const size of TEXT_SIZES) {
@@ -63,43 +63,11 @@ function fitArabic(ctx, text, maxWidth, maxLines, fontFamily) {
   return { lines: wrapLines(ctx, text, maxWidth), size: 22, leading: 40 }
 }
 
-// Lays out Arabic words into wrapped lines, tracking each word's width and
-// original index so the recited word can be highlighted individually.
-function fitArabicWords(ctx, words, maxWidth, maxLines, fontFamily) {
-  for (const size of TEXT_SIZES) {
-    ctx.font = `600 ${size}px ${fontFamily}`
-    const lines = wrapWordLines(ctx, words, maxWidth)
-    if (lines.length <= maxLines) return { lines, size, leading: Math.round(size * 1.8) }
-  }
-  ctx.font = `600 22px ${fontFamily}`
-  return { lines: wrapWordLines(ctx, words, maxWidth), size: 22, leading: 40 }
-}
-
-// Wraps an array of words (or word-units with a .text + .w width) into lines,
-// preserving the original index of each unit for highlight tracking.
-function wrapWordLines(ctx, units, maxWidth) {
-  const spaceW = ctx.measureText(' ').width
-  const lines = []
-  let cur = []
-  let curW = 0
-  for (const unit of units) {
-    const w = typeof unit.w === 'number' ? unit.w : ctx.measureText(unit.text).width
-    if (cur.length && curW + spaceW + w > maxWidth) {
-      lines.push(cur)
-      cur = []
-      curW = 0
-    }
-    cur.push({ text: unit.text, i: unit.i, w })
-    curW = curW === 0 ? w : curW + spaceW + w
-  }
-  if (cur.length) lines.push(cur)
-  return lines
-}
-
 // Draws one line of Arabic right-to-left: the last word sits at the right
 // edge, matching how the whole line would be rendered. Words in [w0, w1)
-// (the active recitation segment) are drawn in gold.
-function drawArabicLine(ctx, line, cx, y, w0, w1) {
+// (the active recitation segment) are drawn in gold; the whole line can be
+// dimmed so the currently recited line stands out inside the sentence.
+function drawArabicLine(ctx, line, cx, y, w0, w1, dim) {
   const spaceW = ctx.measureText(' ').width
   const totalW = line.reduce((s, u) => s + u.w, 0) + spaceW * (line.length - 1)
   ctx.textAlign = 'left'
@@ -107,7 +75,7 @@ function drawArabicLine(ctx, line, cx, y, w0, w1) {
   for (const unit of line) {
     x -= unit.w
     const active = unit.i >= w0 && unit.i < w1
-    ctx.fillStyle = active ? GOLD : CREAM
+    ctx.fillStyle = active ? GOLD : dim ? 'rgba(247, 244, 239, 0.38)' : CREAM
     ctx.fillText(unit.text, x, y)
     x -= spaceW
   }
@@ -151,93 +119,72 @@ function drawCentered(ctx, text, cx, y) {
   ctx.textAlign = prev
 }
 
-// Draws the highlighted word's Malayalam meaning in a rounded gold chip.
-function drawActiveGloss(ctx, text, y, fontFamily, S) {
-  const size =
-    [48, 40, 34]
-      .map((s) => Math.round(s * S))
-      .find((s) => {
-        ctx.font = `600 ${s}px ${fontFamily}`
-        return ctx.measureText(text).width <= 840 * S
-      }) ?? Math.round(20 * S)
-  ctx.font = `600 ${size}px ${fontFamily}`
-  const w = ctx.measureText(text).width + 56 * S
-  const h = 66 * S
-  const cx = W / 2
-  ctx.fillStyle = 'rgba(194, 147, 60, 0.10)'
-  ctx.strokeStyle = 'rgba(194, 147, 60, 0.55)'
-  ctx.lineWidth = 2
-  ctx.beginPath()
-  if (ctx.roundRect) {
-    ctx.roundRect(cx - w / 2, y - h + 26 * S, w, h, 33 * S)
-  } else {
-    ctx.rect(cx - w / 2, y - h + 26 * S, w, h)
-  }
-  ctx.fill()
-  ctx.stroke()
-  ctx.fillStyle = GOLD
-  drawCentered(ctx, text, cx, y)
-}
-
-function ornament(ctx, cx, y, spread) {
-  ctx.strokeStyle = 'rgba(194, 147, 60, 0.55)'
-  ctx.lineWidth = 1.5
-  ctx.beginPath()
-  ctx.moveTo(cx - spread, y)
-  ctx.lineTo(cx - 30, y)
-  ctx.moveTo(cx + 30, y)
-  ctx.lineTo(cx + spread, y)
-  ctx.stroke()
-  ctx.fillStyle = GOLD
-  ctx.beginPath()
-  ctx.moveTo(cx, y - 7)
-  ctx.lineTo(cx + 7, y)
-  ctx.lineTo(cx, y + 7)
-  ctx.lineTo(cx - 7, y)
-  ctx.closePath()
-  ctx.fill()
-}
-
-// Computes real peak amplitudes across the whole video timeline from the
-// decoded audio windows (silence gaps between ayahs stay near zero), so the
-// waveform drawn on each frame is the actual audio being recorded.
-function timelinePeaks(windows, totalDur, barCount = 96) {
-  const peaks = new Float32Array(barCount)
-  if (!windows.length || totalDur <= 0) return peaks
-  const sr = windows[0].buffer.sampleRate
-  for (let b = 0; b < barCount; b++) {
-    const t0 = (b / barCount) * totalDur
-    const t1 = ((b + 1) / barCount) * totalDur
-    let max = 0
-    for (const w of windows) {
-      const wa = w.audioAt
-      const we = wa + w.dur
-      if (we <= t0 || wa >= t1) continue
-      const local0 = Math.max(0, t0 - wa)
-      const local1 = Math.min(w.dur, t1 - wa)
-      const data = w.buffer
-      const channels = data.numberOfChannels
-      const n = Math.floor((local1 - local0) * sr)
-      const step = Math.max(1, Math.floor(n / 48))
-      for (let s = 0; s < n; s += step) {
-        const idx = Math.round(w.start * sr + local0 * sr + s)
-        if (idx < 0 || idx >= data.length) continue
-        let v = 0
-        for (let c = 0; c < channels; c++) {
-          const a = Math.abs(data.getChannelData(c)[idx])
-          if (a > v) v = a
-        }
-        if (v > max) max = v
+// Draws one Malayalam sentence fragment below its Arabic line as plain text,
+// wrapped to at most two centered rows at the largest size that fits the
+// width; the fragment of the recited line is gold, the rest dimmed.
+function drawMlFragment(ctx, text, cx, top, width, S, fontFamily, dim) {
+  let fit = null
+  for (const size of [26, 22, 18]) {
+    ctx.font = `500 ${Math.round(size * S)}px ${fontFamily}`
+    const lines = wrapLines(ctx, text, width)
+    if (lines.length <= 2) {
+      fit = {
+        lines,
+        size: Math.round(size * S),
+        leading: Math.round(size * S * 1.6),
       }
+      break
     }
-    peaks[b] = max
   }
-  let top = 0
-  for (const p of peaks) if (p > top) top = p
-  if (top > 0) {
-    for (let i = 0; i < barCount; i++) peaks[i] = Math.pow(peaks[i] / top, 0.55)
+  if (!fit) {
+    ctx.font = `500 ${Math.round(18 * S)}px ${fontFamily}`
+    fit = { lines: wrapLines(ctx, text, width), size: Math.round(18 * S), leading: Math.round(18 * S * 1.6) }
   }
-  return peaks
+  ctx.fillStyle = dim ? 'rgba(247, 244, 239, 0.38)' : GOLD
+  fit.lines.forEach((line, li) => {
+    drawCentered(ctx, line, cx, top + li * fit.leading)
+  })
+}
+
+// Audio progress bar above the footer: plain gold fill up to the playhead,
+// with a tick + ayah number at the start of every ayah window so the viewer
+// can see where each ayah splits inside the video's timeline.
+function drawAudioProgress(ctx, progress, S) {
+  if (!progress) return
+  const w = 900 * S
+  const x0 = W / 2 - w / 2
+  const y = 1572 * S
+  const barH = 6 * S
+  const frac = Math.max(0, Math.min(1, progress.fraction))
+  ctx.fillStyle = 'rgba(247, 244, 239, 0.16)'
+  ctx.beginPath()
+  if (ctx.roundRect) ctx.roundRect(x0, y - barH / 2, w, barH, barH / 2)
+  else ctx.rect(x0, y - barH / 2, w, barH)
+  ctx.fill()
+  if (frac > 0) {
+    ctx.fillStyle = GOLD
+    ctx.beginPath()
+    if (ctx.roundRect) ctx.roundRect(x0, y - barH / 2, Math.max(barH, w * frac), barH, barH / 2)
+    else ctx.rect(x0, y - barH / 2, w * frac, barH)
+    ctx.fill()
+  }
+  for (const split of progress.splits || []) {
+    const x = x0 + w * split.at
+    if (x <= x0 + 2 || x >= x0 + w - 2) continue
+    ctx.strokeStyle = 'rgba(247, 244, 239, 0.75)'
+    ctx.lineWidth = 1.5
+    ctx.beginPath()
+    ctx.moveTo(x, y - 14 * S)
+    ctx.lineTo(x, y + 14 * S)
+    ctx.stroke()
+    ctx.fillStyle = 'rgba(247, 244, 239, 0.75)'
+    ctx.font = `500 ${Math.round(14 * S)}px "Satoshi"`
+    ctx.textAlign = 'center'
+    ctx.fillText(String(split.label), x, y - 19 * S)
+  }
+  ctx.fillStyle = CREAM
+  ctx.fillRect(x0 + w * frac - 1.5 * S, y - 14 * S, 3 * S, 28 * S)
+  ctx.textAlign = 'center'
 }
 
 // Draws the waveform strip near the bottom of a frame; bars up to `fraction`
@@ -259,7 +206,26 @@ function drawWaveform(ctx, peaks, fraction, S) {
   }
 }
 
-function drawSlide(ctx, { surahLabel, surahNumber, ayah, index, total, words, active, fonts, reciterLabel, waveform }) {
+function ornament(ctx, cx, y, spread) {
+  ctx.strokeStyle = 'rgba(194, 147, 60, 0.55)'
+  ctx.lineWidth = 1.5
+  ctx.beginPath()
+  ctx.moveTo(cx - spread, y)
+  ctx.lineTo(cx - 30, y)
+  ctx.moveTo(cx + 30, y)
+  ctx.lineTo(cx + spread, y)
+  ctx.stroke()
+  ctx.fillStyle = GOLD
+  ctx.beginPath()
+  ctx.moveTo(cx, y - 7)
+  ctx.lineTo(cx + 7, y)
+  ctx.lineTo(cx, y + 7)
+  ctx.lineTo(cx - 7, y)
+  ctx.closePath()
+  ctx.fill()
+}
+
+function drawSlide(ctx, { surahLabel, surahNumber, ayah, index, total, words, active, fonts, reciterLabel, progress, waveform }) {
   const f = fonts || DEFAULT_FONTS
   const S = H / 1920
   ctx.fillStyle = NAVY
@@ -296,55 +262,59 @@ function drawSlide(ctx, { surahLabel, surahNumber, ayah, index, total, words, ac
   const w1 = activeSeg ? activeSeg[1] : -1
 
   const hasWords = words && words.ar.length > 0
-  let arabicTop = (showBasmala ? 712 : 640) * S
-  let arabicLines
-  let arabicLeading
   if (hasWords) {
-    const fit = fitArabicWords(ctx, words.ar.map((text, i) => ({ text, i })), 900 * S, 4, f.ar)
-    arabicLines = fit.lines
-    arabicLeading = fit.leading
+    // The ayah rendered as a sentence split into wrapped lines: the line
+    // being recited stays at its place in the block (dimmed while waiting,
+    // full-cream with its recited word in gold once reached), and the real
+    // Malayalam sentence split into a fragment under each line, verified
+    // against the word-by-word meanings.
+    const fit = fitArabicWords(ctx, words.ar.map((text, i) => ({ text, i })), f.ar, 900 * S)
+    const lines = fit.lines
     ctx.font = `600 ${fit.size}px ${f.ar}`
-    arabicLines.forEach((line, i) => {
-      drawArabicLine(ctx, line, W / 2, arabicTop + i * arabicLeading, w0, w1)
+    const arabicTop = (showBasmala ? 712 : 640) * S
+    const lineIndex = activeLineOf(lines, activeSeg)
+    const fragments = sentenceSplits(
+      lines,
+      words.segs,
+      words.ml,
+      ayah.translationMl || ayah.translation || '',
+    )
+    lines.forEach((line, i) => {
+      drawArabicLine(ctx, line, W / 2, arabicTop + i * fit.leading, i === lineIndex ? w0 : -1, i === lineIndex ? w1 : -1, i !== lineIndex)
+      const frag = fragments[i]
+      if (frag) {
+        drawMlFragment(ctx, frag, W / 2, arabicTop + i * fit.leading + 38 * S, 900 * S, S, f.ml, i !== lineIndex)
+      }
     })
   } else {
     const fit = fitArabic(ctx, ayah.arabic, 900 * S, 4, f.ar)
-    arabicLines = fit.lines
-    arabicLeading = fit.leading
+    const arabicTop = (showBasmala ? 712 : 640) * S
     ctx.font = `600 ${fit.size}px ${f.ar}`
     ctx.fillStyle = CREAM
     fit.lines.forEach((line, i) => {
       ctx.fillText(line, W / 2, arabicTop + i * fit.leading)
     })
-  }
-  const arabicBottom = arabicTop + (arabicLines.length - 1) * arabicLeading
+    const arabicBottom = arabicTop + (fit.lines.length - 1) * fit.leading
 
-  ctx.strokeStyle = 'rgba(194, 147, 60, 0.4)'
-  ctx.lineWidth = 1
-  ctx.beginPath()
-  ctx.moveTo(W / 2 - 60 * S, arabicBottom + 84 * S)
-  ctx.lineTo(W / 2 + 60 * S, arabicBottom + 84 * S)
-  ctx.stroke()
+    ctx.strokeStyle = 'rgba(194, 147, 60, 0.4)'
+    ctx.lineWidth = 1
+    ctx.beginPath()
+    ctx.moveTo(W / 2 - 60 * S, arabicBottom + 84 * S)
+    ctx.lineTo(W / 2 + 60 * S, arabicBottom + 84 * S)
+    ctx.stroke()
 
-  const translationTop = arabicBottom + 168 * S
-  const mlText = (ayah.translationMl || ayah.translation || '').replace(/\r\n/g, ' ').trim()
-  const glossReserve = hasWords && words.ml.length > 0 ? 170 * S : 0
-  const avail = 1640 * S - translationTop - 40 * S - glossReserve
-  const fit = fitMl(ctx, mlText, 800 * S, 4, avail, f.ml)
-  ctx.font = `500 ${fit.size}px ${f.ml}`
-  ctx.fillStyle = 'rgba(247, 244, 239, 0.92)'
-  fit.lines.forEach((line, i) => {
-    drawCentered(ctx, line, W / 2, translationTop + i * fit.leading)
-  })
-  if (hasWords && words.ml.length > 0) {
-    const glossActive = effectiveGloss(words.ml, activeIdx)
-    if (glossActive >= 0) {
-      const text = (words.ml[glossActive] || '').replace(/\r\n/g, ' ').trim()
-      if (text && text !== '*') {
-        drawActiveGloss(ctx, text, translationTop + fit.lines.length * fit.leading + 80 * S, f.ml, S)
-      }
-    }
+    const translationTop = arabicBottom + 168 * S
+    const mlText = (ayah.translationMl || ayah.translation || '').replace(/\r\n/g, ' ').trim()
+    const avail = 1640 * S - translationTop - 40 * S
+    const mlFit = fitMl(ctx, mlText, 800 * S, 4, avail, f.ml)
+    ctx.font = `500 ${mlFit.size}px ${f.ml}`
+    ctx.fillStyle = 'rgba(247, 244, 239, 0.92)'
+    mlFit.lines.forEach((line, i) => {
+      drawCentered(ctx, line, W / 2, translationTop + i * mlFit.leading)
+    })
   }
+
+  drawAudioProgress(ctx, progress, S)
 
   ornament(ctx, W / 2, 1640 * S, 210 * S)
 
@@ -363,9 +333,7 @@ function drawSlide(ctx, { surahLabel, surahNumber, ayah, index, total, words, ac
     ctx.fillText(reciterLabel.toUpperCase(), W / 2, 1750 * S)
   }
 
-  if (waveform && waveform.peaks?.length) {
-    drawWaveform(ctx, waveform.peaks, waveform.fraction, S)
-  }
+  drawWaveform(ctx, waveform.peaks, waveform.fraction, S)
 }
 
 // Two-byte AudioSpecificConfig for AAC-LC (MPEG-4 object type 2). WebKit
@@ -447,9 +415,9 @@ export async function renderAyahVideo({ surahNumber, surahLabel, ayahs, reciter,
     const total = ayahs.length
     const slides = []
     let play = null
-    let t = audio.currentTime + 0.3
     let surahBuf = null
     let perAyahBufs = null
+    let t = audio.currentTime + 0.3
 
     const dest = audio.createMediaStreamDestination()
     const master = audio.createGain()
@@ -499,17 +467,17 @@ export async function renderAyahVideo({ surahNumber, surahLabel, ayahs, reciter,
         },
       }
 
+      t = audio.currentTime + 0.3
+      for (let i = 0; i < total; i++) {
+        slides.push({ start: t, dur: windows[i].dur, ayah: ayahs[i], words: windows[i].words })
+        t += windows[i].dur + PAD
+      }
+
       // The <audio> element streams the file without exposing samples, so a
       // separate decode is needed for the real waveform peaks.
       const surahRes = await fetch(surahAudioUrl(reciter, surahNumber))
       if (!surahRes.ok) throw new Error(`Could not fetch surah ${surahNumber} audio`)
       surahBuf = await decodeBuffer(audio, await surahRes.arrayBuffer())
-
-      t = audio.currentTime + 0.3
-      for (let i = 0; i < total; i++) {
-        slides.push({ start: t, ayah: ayahs[i], words: windows[i].words })
-        t += windows[i].dur + PAD
-      }
     } else {
       const [decoded] = await Promise.all([
         (async () => {
@@ -534,6 +502,7 @@ export async function renderAyahVideo({ surahNumber, surahLabel, ayahs, reciter,
         const ayah = ayahs[i]
         slides.push({
           start: t,
+          dur: decoded[i].duration,
           ayah,
           words: karaoke
             ? ayahWords(karaoke.timings, karaoke.ml, surahNumber, ayah.number, ayah.arabic)
@@ -643,6 +612,10 @@ export async function renderAyahVideo({ surahNumber, surahLabel, ayahs, reciter,
           active: lastActive,
           fonts,
           reciterLabel,
+          progress: {
+            fraction: Math.min(1, elapsed / totalDur),
+            splits: slides.map((s) => ({ at: (s.start - t0) / totalDur, label: s.ayah.number })),
+          },
           waveform: { peaks, fraction: Math.min(1, elapsed / totalDur) },
         })
         onProgress?.({ phase: 'render', done: Math.min(1, elapsed / totalDur) })
@@ -718,6 +691,48 @@ function decodeBuffer(ctx, data) {
   return new Promise((resolve, reject) => {
     ctx.decodeAudioData(data.slice(0), resolve, reject)
   })
+}
+
+// Computes real peak amplitudes across the whole video timeline from the
+// decoded audio windows (silence gaps between ayahs stay near zero), so the
+// waveform drawn on each frame is the actual audio being recorded.
+function timelinePeaks(windows, totalDur, barCount = 96) {
+  const peaks = new Float32Array(barCount)
+  if (!windows.length || totalDur <= 0) return peaks
+  const sr = windows[0].buffer.sampleRate
+  for (let b = 0; b < barCount; b++) {
+    const t0 = (b / barCount) * totalDur
+    const t1 = ((b + 1) / barCount) * totalDur
+    let max = 0
+    for (const w of windows) {
+      const wa = w.audioAt
+      const we = wa + w.dur
+      if (we <= t0 || wa >= t1) continue
+      const local0 = Math.max(0, t0 - wa)
+      const local1 = Math.min(w.dur, t1 - wa)
+      const data = w.buffer
+      const channels = data.numberOfChannels
+      const n = Math.floor((local1 - local0) * sr)
+      const step = Math.max(1, Math.floor(n / 48))
+      for (let s = 0; s < n; s += step) {
+        const idx = Math.round(w.start * sr + local0 * sr + s)
+        if (idx < 0 || idx >= data.length) continue
+        let v = 0
+        for (let c = 0; c < channels; c++) {
+          const a = Math.abs(data.getChannelData(c)[idx])
+          if (a > v) v = a
+        }
+        if (v > max) max = v
+      }
+    }
+    peaks[b] = max
+  }
+  let top = 0
+  for (const p of peaks) if (p > top) top = p
+  if (top > 0) {
+    for (let i = 0; i < barCount; i++) peaks[i] = Math.pow(peaks[i] / top, 0.55)
+  }
+  return peaks
 }
 
 // Renders the ayah slideshow offline with WebCodecs: each slide is drawn at a
@@ -957,6 +972,7 @@ export async function renderAyahVideoOffline({
       } else {
         lastActive = -1
       }
+      const winFrac = Math.min(1, elapsed / totalDur)
       drawSlide(ctx, {
         surahLabel,
         surahNumber,
@@ -967,7 +983,11 @@ export async function renderAyahVideoOffline({
         active: lastActive,
         fonts,
         reciterLabel,
-        waveform: { peaks, fraction: Math.min(1, elapsed / totalDur) },
+        progress: {
+          fraction: winFrac,
+          splits: slides.map((s) => ({ at: s.slideAt / totalDur, label: ayahs[s.index].number })),
+        },
+        waveform: { peaks, fraction: winFrac },
       })
       const frame = new VideoFrame(canvas, {
         timestamp: Math.round(elapsed * 1e6),
