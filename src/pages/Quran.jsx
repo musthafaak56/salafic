@@ -815,10 +815,8 @@ export default function Quran() {
                 {mlSplits[lineIndex] ? (
                   <p
                     dir="ltr"
-                    style={{ fontFamily: fontPair.ml, fontSize: arabicWrap ? arabicWrap.size : undefined, marginTop: arabicWrap ? `${Math.round(arabicWrap.size * 0.6)}px` : undefined }}
-                    className={`font-malayalam leading-relaxed font-medium transition-colors duration-300 ${
-                      activeSeg ? 'text-ink' : 'text-ink/60'
-                    }`}
+                    style={{ fontFamily: fontPair.ml, fontSize: arabicWrap ? arabicWrap.size : undefined, marginTop: arabicWrap ? `${Math.round(arabicWrap.size * 1.1)}px` : undefined }}
+                    className="font-malayalam leading-relaxed font-medium text-ink transition-colors duration-300"
                   >
                     {mlSplits[lineIndex]}
                   </p>

@@ -337,12 +337,12 @@ function drawSlide(ctx, { surahLabel, surahNumber, ayah, index, total, words, ac
     )
     const li = Math.min(lineIndex, lines.length - 1)
     const lineY = Math.round(arabicTop + ((lines.length - 1) * fit.leading) / 2)
-    drawArabicLine(ctx, lines[li], W / 2, lineY, waiting ? -1 : w0, waiting ? -1 : w1, waiting)
-    const fragTop = Math.round(lineY + Math.max(18 * S, fit.size * 0.6))
+    drawArabicLine(ctx, lines[li], W / 2, lineY, waiting ? -1 : w0, waiting ? -1 : w1, false)
+    const fragTop = Math.round(lineY + Math.max(22 * S, fit.size * 1.1))
     const frag = fragments[li]
     let fragBottom = fragTop
     if (frag) {
-      fragBottom = drawMlFragment(ctx, frag, W / 2, fragTop, 900 * S, S, f.ml, waiting, fit.size)
+      fragBottom = drawMlFragment(ctx, frag, W / 2, fragTop, 900 * S, S, f.ml, false, fit.size)
     }
     const glosses = lineGlosses(lines[li], words.segs, words.ml)
     const activeGloss = !waiting ? glosses.find((g) => g.segIndex === activeIdx) : null
