@@ -119,34 +119,45 @@ function drawCentered(ctx, text, cx, y) {
   ctx.textAlign = prev
 }
 
-// Draws one Malayalam sentence fragment below its Arabic line as plain white
-// text, sized to match the Arabic line it belongs to, wrapped to at most two
-// centered rows; the fragment of the recited line is white, the rest dimmed.
-function drawMlFragment(ctx, text, cx, top, width, S, fontFamily, dim, maxSize) {
-  const base = Math.max(20, Math.round(maxSize))
-  let fit = null
-  for (const size of [base, base - 6, base - 12, base - 18]) {
-    if (size < 14) break
-    ctx.font = `500 ${Math.round(size * S)}px ${fontFamily}`
-    const lines = wrapLines(ctx, text, width)
-    if (lines.length <= 2) {
-      fit = {
-        lines,
-        size: Math.round(size * S),
-        leading: Math.round(size * S * 1.5),
-      }
-      break
-    }
-  }
-  if (!fit) {
-    ctx.font = `500 ${Math.round(14 * S)}px ${fontFamily}`
-    fit = { lines: wrapLines(ctx, text, width), size: Math.round(14 * S), leading: Math.round(14 * S * 1.5) }
-  }
-  ctx.fillStyle = dim ? 'rgba(247, 244, 239, 0.38)' : CREAM
-  fit.lines.forEach((line, li) => {
-    drawCentered(ctx, line, cx, top + li * fit.leading)
+// Wraps the Arabic words of an ayah at one fixed size, so every ayah in a
+// video shares the same font size (the smallest size any ayah fits at).
+function wrapArabicAt(ctx, units, size, maxWidth, fontFamily) {
+  ctx.font = `600 ${size}px ${fontFamily}`
+  return wrapWords(ctx, units, maxWidth)
+}
+
+// Precomputes the constant per-video layout: every ayah's Arabic lines wrap
+// at the same size (the minimum across the range), and the sentence + gloss
+// sizes are derived from it so nothing varies between ayahs.
+function buildLayouts(slides, fontFamily) {
+  const scratch = document.createElement('canvas').getContext('2d')
+  const width = 900 * (H / 1920)
+  const fits = slides.map((s) => {
+    const units = s.words?.ar?.map((text, i) => ({ text, i }))
+    return units && units.length ? fitArabicWords(scratch, units, fontFamily, width) : null
   })
-  return top + (fit.lines.length - 1) * fit.leading + fit.size * 0.4
+  const constSize = Math.min(...fits.filter(Boolean).map((fit) => fit.size))
+  return slides.map((s) => {
+    const units = s.words?.ar?.map((text, i) => ({ text, i }))
+    if (!units || !units.length) return null
+    return { lines: wrapArabicAt(scratch, units, constSize, width, fontFamily), size: constSize, leading: Math.round(constSize * 1.8) }
+  })
+}
+
+// Draws one Malayalam sentence fragment below its Arabic line as plain white
+// text at the video-wide constant size; the fragment of the recited line is
+// white, the rest dimmed. It never shrinks to fit - the sentence wraps to as
+// many centered rows as it needs.
+function drawMlFragment(ctx, text, cx, top, width, S, fontFamily, dim, size) {
+  const px = Math.max(20, Math.round(size)) * S
+  ctx.font = `500 ${Math.round(px)}px ${fontFamily}`
+  const lines = wrapLines(ctx, text, width)
+  const leading = Math.round(px * 1.5)
+  ctx.fillStyle = dim ? 'rgba(247, 244, 239, 0.38)' : CREAM
+  lines.forEach((line, li) => {
+    drawCentered(ctx, line, cx, top + li * leading)
+  })
+  return top + (lines.length - 1) * leading + Math.round(px * 0.4)
 }
 
 // Draws the word-by-word Malayalam glosses of one line as gold pill chips under
@@ -280,7 +291,7 @@ function ornament(ctx, cx, y, spread) {
   ctx.fill()
 }
 
-function drawSlide(ctx, { surahLabel, surahNumber, ayah, index, total, words, active, fonts, reciterLabel, progress, waveform }) {
+function drawSlide(ctx, { surahLabel, surahNumber, ayah, index, total, words, active, fit, fonts, reciterLabel, progress, waveform }) {
   const f = fonts || DEFAULT_FONTS
   const S = H / 1920
   ctx.fillStyle = NAVY
@@ -321,9 +332,8 @@ function drawSlide(ctx, { surahLabel, surahNumber, ayah, index, total, words, ac
     // Only the line being recited is shown at a time, centered in the block
     // so the view stays steady; inside it the recited word is gold (karaoke),
     // the rest of the Arabic full cream. Under the line: the real Malayalam
-    // sentence in white, sized to match the Arabic, with the word-by-word
+    // sentence in white at the video-wide constant size, with the word-by-word
     // glosses of that line beneath it.
-    const fit = fitArabicWords(ctx, words.ar.map((text, i) => ({ text, i })), f.ar, 900 * S)
     const lines = fit.lines
     ctx.font = `600 ${fit.size}px ${f.ar}`
     const arabicTop = (showBasmala ? 712 : 640) * S
@@ -338,27 +348,28 @@ function drawSlide(ctx, { surahLabel, surahNumber, ayah, index, total, words, ac
     const li = Math.min(lineIndex, lines.length - 1)
     const lineY = Math.round(arabicTop + ((lines.length - 1) * fit.leading) / 2)
     drawArabicLine(ctx, lines[li], W / 2, lineY, waiting ? -1 : w0, waiting ? -1 : w1, false)
-    const fragTop = Math.round(lineY + Math.max(22 * S, fit.size * 1.1))
+    const fragTop = Math.round(lineY + Math.max(26 * S, fit.size * 1.5))
     const frag = fragments[li]
+    const fragSize = Math.round(fit.size * 1.2)
     let fragBottom = fragTop
     if (frag) {
-      fragBottom = drawMlFragment(ctx, frag, W / 2, fragTop, 900 * S, S, f.ml, false, fit.size)
+      fragBottom = drawMlFragment(ctx, frag, W / 2, fragTop, 900 * S, S, f.ml, false, fragSize)
     }
     const glosses = lineGlosses(lines[li], words.segs, words.ml)
     const activeGloss = !waiting ? glosses.find((g) => g.segIndex === activeIdx) : null
     if (activeGloss) {
-      const glossSize = Math.max(13, Math.round(fit.size * 0.45))
+      const glossSize = Math.max(13, Math.round(fragSize * 0.72))
       drawGlossRow(ctx, [activeGloss], W / 2 + 4 * S, Math.round(fragBottom + 12 * S), 820 * S, glossSize, f.ml, activeGloss.segIndex, S, false)
     }
   } else {
-    const fit = fitArabic(ctx, ayah.arabic, 900 * S, 4, f.ar)
+    const fallback = fitArabic(ctx, ayah.arabic, 900 * S, 4, f.ar)
     const arabicTop = (showBasmala ? 712 : 640) * S
-    ctx.font = `600 ${fit.size}px ${f.ar}`
+    ctx.font = `600 ${fallback.size}px ${f.ar}`
     ctx.fillStyle = CREAM
-    fit.lines.forEach((line, i) => {
-      ctx.fillText(line, W / 2, arabicTop + i * fit.leading)
+    fallback.lines.forEach((line, i) => {
+      ctx.fillText(line, W / 2, arabicTop + i * fallback.leading)
     })
-    const arabicBottom = arabicTop + (fit.lines.length - 1) * fit.leading
+    const arabicBottom = arabicTop + (fallback.lines.length - 1) * fallback.leading
 
     ctx.strokeStyle = 'rgba(194, 147, 60, 0.4)'
     ctx.lineWidth = 1
@@ -581,6 +592,11 @@ export async function renderAyahVideo({ surahNumber, surahLabel, ayahs, reciter,
     }
     const totalDur = t - audio.currentTime + TAIL
 
+    const fitLayouts = buildLayouts(slides, fonts?.ar || DEFAULT_FONTS.ar)
+    slides.forEach((s, i) => {
+      s.fit = fitLayouts[i]
+    })
+
     const canvas = document.createElement('canvas')
     canvas.width = W
     canvas.height = H
@@ -674,6 +690,7 @@ export async function renderAyahVideo({ surahNumber, surahLabel, ayahs, reciter,
           total,
           words: slide.words,
           active: lastActive,
+          fit: slide.fit,
           fonts,
           reciterLabel,
           progress: {
@@ -916,6 +933,10 @@ export async function renderAyahVideoOffline({
   // The whole-surah decode can be hundreds of MB on iOS, so the buffers are
   // released the moment the audio track is done, before frames start encoding.
   const slides = decoded.map((d, i) => ({ slideAt: d.slideAt, dur: d.dur, words: d.words, index: i }))
+  const fitLayouts = buildLayouts(slides, fonts?.ar || DEFAULT_FONTS.ar)
+  slides.forEach((s, i) => {
+    s.fit = fitLayouts[i]
+  })
 
   const videoCodec = await pickVideoCodec(W, H)
   const audioCodec = await pickAudioCodec(sampleRate, channels)
@@ -1045,6 +1066,7 @@ export async function renderAyahVideoOffline({
         total: ayahs.length,
         words: slide.words,
         active: lastActive,
+        fit: slide.fit,
         fonts,
         reciterLabel,
         progress: {

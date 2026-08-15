@@ -815,7 +815,7 @@ export default function Quran() {
                 {mlSplits[lineIndex] ? (
                   <p
                     dir="ltr"
-                    style={{ fontFamily: fontPair.ml, fontSize: arabicWrap ? arabicWrap.size : undefined, marginTop: arabicWrap ? `${Math.round(arabicWrap.size * 1.1)}px` : undefined }}
+                    style={{ fontFamily: fontPair.ml, fontSize: arabicWrap ? Math.round(arabicWrap.size * 1.2) : undefined, marginTop: arabicWrap ? `${Math.round(arabicWrap.size * 1.1)}px` : undefined }}
                     className="font-malayalam leading-relaxed font-medium text-ink transition-colors duration-300"
                   >
                     {mlSplits[lineIndex]}
@@ -825,7 +825,7 @@ export default function Quran() {
                   const activeGloss =
                     activeSeg && glossRow[lineIndex]?.find((g) => g.segIndex === activeWordIndex)
                   if (!activeGloss) return null
-                  const fs = arabicWrap ? Math.max(13, Math.round(arabicWrap.size * 0.45)) : 14
+                  const fs = arabicWrap ? Math.max(13, Math.round(arabicWrap.size * 1.2 * 0.72)) : 14
                   return (
                     <span
                       dir="ltr"
