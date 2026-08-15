@@ -345,9 +345,10 @@ function drawSlide(ctx, { surahLabel, surahNumber, ayah, index, total, words, ac
       fragBottom = drawMlFragment(ctx, frag, W / 2, fragTop, 900 * S, S, f.ml, waiting, fit.size)
     }
     const glosses = lineGlosses(lines[li], words.segs, words.ml)
-    if (glosses.length) {
+    const activeGloss = !waiting ? glosses.find((g) => g.segIndex === activeIdx) : null
+    if (activeGloss) {
       const glossSize = Math.max(13, Math.round(fit.size * 0.45))
-      drawGlossRow(ctx, glosses, W / 2 + 4 * S, Math.round(fragBottom + 12 * S), 820 * S, glossSize, f.ml, activeIdx, S, waiting)
+      drawGlossRow(ctx, [activeGloss], W / 2 + 4 * S, Math.round(fragBottom + 12 * S), 820 * S, glossSize, f.ml, activeGloss.segIndex, S, false)
     }
   } else {
     const fit = fitArabic(ctx, ayah.arabic, 900 * S, 4, f.ar)
