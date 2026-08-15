@@ -18,7 +18,7 @@ import {
 } from '../lib/quran'
 import { renderAyahVideo, renderAyahVideoOffline, hasOfflineSupport } from '../lib/quranVideo'
 import { loadKaraoke, ayahWords, activeWord } from '../lib/karaoke'
-import { fitArabicWords, activeLineOf, sentenceSplits } from '../lib/wordWrap'
+import { fitArabicWords, activeLineOf, sentenceSplits, lineGlosses } from '../lib/wordWrap'
 import AppHeader from '../components/AppHeader'
 import LoadingState from '../components/LoadingState'
 
@@ -83,6 +83,14 @@ export default function Quran() {
       nowWords.words.segs,
       nowWords.words.ml,
       nowWords.translation,
+    )
+  }, [arabicWrap, nowWords])
+
+  // Word-by-word Malayalam glosses of each line, shown under the sentence.
+  const glossRow = useMemo(() => {
+    if (!arabicWrap || !nowWords?.words?.ml?.length) return []
+    return arabicWrap.lines.map((line) =>
+      lineGlosses(line, nowWords.words.segs, nowWords.words.ml),
     )
   }, [arabicWrap, nowWords])
 
@@ -790,7 +798,9 @@ export default function Quran() {
                         <span
                           key={unit.i}
                           className={`inline-block transition-colors duration-200 ${
-                            activeSeg ? 'text-gold' : ''
+                            activeSeg && unit.i >= activeSeg[0] && unit.i < activeSeg[1]
+                              ? 'text-gold'
+                              : ''
                           }`}
                         >
                           {unit.text}
@@ -799,19 +809,35 @@ export default function Quran() {
                             : ''}
                         </span>
                       ))}
-                      {mlSplits[lineIndex] ? (
-                        <p
-                          dir="ltr"
-                          style={{ fontFamily: fontPair.ml }}
-                          className={`mt-1 font-malayalam text-lg leading-relaxed font-semibold transition-colors duration-300 sm:text-xl ${
-                            activeSeg ? 'text-gold' : 'text-ink/75'
-                          }`}
-                        >
-                          {mlSplits[lineIndex]}
-                        </p>
-                      ) : null}
                     </div>
                   </div>
+                ) : null}
+                {mlSplits[lineIndex] ? (
+                  <p
+                    dir="ltr"
+                    style={{ fontFamily: fontPair.ml, fontSize: arabicWrap ? arabicWrap.size : undefined, marginTop: arabicWrap ? `${Math.round(arabicWrap.size * 0.6)}px` : undefined }}
+                    className={`font-malayalam leading-relaxed font-medium transition-colors duration-300 ${
+                      activeSeg ? 'text-ink' : 'text-ink/60'
+                    }`}
+                  >
+                    {mlSplits[lineIndex]}
+                  </p>
+                ) : null}
+                {glossRow[lineIndex]?.length ? (
+                  <p
+                    dir="ltr"
+                    style={{ fontFamily: fontPair.ml, fontSize: arabicWrap ? `${Math.max(13, Math.round(arabicWrap.size * 0.45))}px` : undefined, marginTop: '10px' }}
+                    className="font-malayalam leading-relaxed"
+                  >
+                    {glossRow[lineIndex].map((g, gi) => (
+                      <span
+                        key={gi}
+                        className={`mr-2 inline-block ${activeSeg && g.segIndex === activeWordIndex ? 'text-gold' : 'text-ink/55'}`}
+                      >
+                        {g.text}
+                      </span>
+                    ))}
+                  </p>
                 ) : null}
               </div>
             </div>

@@ -1,7 +1,7 @@
 import { ayahUrl, surahAudioUrl, surahMode } from './quran'
 import { FONT_PAIRS } from './quran'
 import { loadKaraoke, ayahWords, activeWord } from './karaoke'
-import { wrapWords, activeLineOf, sentenceSplits, fitArabicWords, TEXT_SIZES } from './wordWrap'
+import { wrapWords, activeLineOf, sentenceSplits, lineGlosses, fitArabicWords, TEXT_SIZES } from './wordWrap'
 import {
   Output,
   Mp4OutputFormat,
@@ -119,30 +119,70 @@ function drawCentered(ctx, text, cx, y) {
   ctx.textAlign = prev
 }
 
-// Draws one Malayalam sentence fragment below its Arabic line as plain text,
-// wrapped to at most two centered rows at the largest size that fits the
-// width; the fragment of the recited line is gold, the rest dimmed.
-function drawMlFragment(ctx, text, cx, top, width, S, fontFamily, dim) {
+// Draws one Malayalam sentence fragment below its Arabic line as plain white
+// text, sized to match the Arabic line it belongs to, wrapped to at most two
+// centered rows; the fragment of the recited line is white, the rest dimmed.
+function drawMlFragment(ctx, text, cx, top, width, S, fontFamily, dim, maxSize) {
+  const base = Math.max(20, Math.round(maxSize))
   let fit = null
-  for (const size of [26, 22, 18]) {
+  for (const size of [base, base - 6, base - 12, base - 18]) {
+    if (size < 14) break
     ctx.font = `500 ${Math.round(size * S)}px ${fontFamily}`
     const lines = wrapLines(ctx, text, width)
     if (lines.length <= 2) {
       fit = {
         lines,
         size: Math.round(size * S),
-        leading: Math.round(size * S * 1.6),
+        leading: Math.round(size * S * 1.5),
       }
       break
     }
   }
   if (!fit) {
-    ctx.font = `500 ${Math.round(18 * S)}px ${fontFamily}`
-    fit = { lines: wrapLines(ctx, text, width), size: Math.round(18 * S), leading: Math.round(18 * S * 1.6) }
+    ctx.font = `500 ${Math.round(14 * S)}px ${fontFamily}`
+    fit = { lines: wrapLines(ctx, text, width), size: Math.round(14 * S), leading: Math.round(14 * S * 1.5) }
   }
-  ctx.fillStyle = dim ? 'rgba(247, 244, 239, 0.38)' : GOLD
+  ctx.fillStyle = dim ? 'rgba(247, 244, 239, 0.38)' : CREAM
   fit.lines.forEach((line, li) => {
     drawCentered(ctx, line, cx, top + li * fit.leading)
+  })
+  return top + (fit.lines.length - 1) * fit.leading + fit.size * 0.4
+}
+
+// Draws the word-by-word Malayalam glosses of one line as a row of tokens
+// below the sentence; the gloss of the segment being recited is gold.
+function drawGlossRow(ctx, glosses, cx, top, width, size, fontFamily, activeSegIndex, S, waiting) {
+  if (!glosses.length) return
+  ctx.font = `500 ${Math.round(size * S)}px ${fontFamily}`
+  const gap = Math.round(size * S * 1.4)
+  const tokens = glosses.map((g) => ({ g, w: ctx.measureText(g.text).width }))
+  const rows = []
+  let cur = []
+  let curW = 0
+  for (const t of tokens) {
+    const add = t.w + (cur.length ? gap : 0)
+    if (cur.length && curW + add > width) {
+      rows.push(cur)
+      cur = [t]
+      curW = t.w
+    } else {
+      cur.push(t)
+      curW += add
+    }
+  }
+  if (cur.length) rows.push(cur)
+  const leading = Math.round(size * S * 1.55)
+  rows.slice(0, 2).forEach((row, ri) => {
+    const totalW = row.reduce((s, t) => s + t.w, 0) + gap * (row.length - 1)
+    let x = cx - totalW / 2
+    for (const t of row) {
+      const active = !waiting && t.g.segIndex === activeSegIndex
+      ctx.fillStyle = active ? GOLD : 'rgba(247, 244, 239, 0.72)'
+      ctx.textAlign = 'left'
+      ctx.fillText(t.g.text, x, top + ri * leading)
+      ctx.textAlign = 'center'
+      x += t.w + gap
+    }
   })
 }
 
@@ -258,14 +298,16 @@ function drawSlide(ctx, { surahLabel, surahNumber, ayah, index, total, words, ac
 
   const activeIdx = typeof active === 'number' && active >= 0 ? active : -1
   const activeSeg = activeIdx >= 0 ? words?.segs?.[activeIdx] : null
+  const w0 = activeSeg ? activeSeg[0] : -1
+  const w1 = activeSeg ? activeSeg[1] : -1
 
   const hasWords = words && words.ar.length > 0
   if (hasWords) {
-    // The ayah rendered as a sentence split into wrapped lines: the line
-    // being recited stays at its place in the block (dimmed while waiting,
-    // full-cream with its recited word in gold once reached), and the real
-    // Malayalam sentence split into a fragment under each line, verified
-    // against the word-by-word meanings.
+    // Only the line being recited is shown at a time, centered in the block
+    // so the view stays steady; inside it the recited word is gold (karaoke),
+    // the rest of the Arabic full cream. Under the line: the real Malayalam
+    // sentence in white, sized to match the Arabic, with the word-by-word
+    // glosses of that line beneath it.
     const fit = fitArabicWords(ctx, words.ar.map((text, i) => ({ text, i })), f.ar, 900 * S)
     const lines = fit.lines
     ctx.font = `600 ${fit.size}px ${f.ar}`
@@ -278,16 +320,19 @@ function drawSlide(ctx, { surahLabel, surahNumber, ayah, index, total, words, ac
       words.ml,
       ayah.translationMl || ayah.translation || '',
     )
-    // Only the line being recited is shown at a time, whole (no word-by-word
-    // split): dimmed as the up-next line before its words begin, then gold
-    // while it is recited. It stays centered in the block so the view holds
-    // steady as the recitation moves line to line.
     const li = Math.min(lineIndex, lines.length - 1)
     const lineY = Math.round(arabicTop + ((lines.length - 1) * fit.leading) / 2)
-    drawArabicLine(ctx, lines[li], W / 2, lineY, waiting ? -1 : 0, waiting ? -1 : 9999, waiting)
+    drawArabicLine(ctx, lines[li], W / 2, lineY, waiting ? -1 : w0, waiting ? -1 : w1, waiting)
+    const fragTop = Math.round(lineY + Math.max(18 * S, fit.size * 0.6))
     const frag = fragments[li]
+    let fragBottom = fragTop
     if (frag) {
-      drawMlFragment(ctx, frag, W / 2, lineY + 38 * S, 900 * S, S, f.ml, waiting)
+      fragBottom = drawMlFragment(ctx, frag, W / 2, fragTop, 900 * S, S, f.ml, waiting, fit.size)
+    }
+    const glosses = lineGlosses(lines[li], words.segs, words.ml)
+    if (glosses.length) {
+      const glossSize = Math.max(13, Math.round(fit.size * 0.45))
+      drawGlossRow(ctx, glosses, W / 2 + 4 * S, Math.round(fragBottom + 8 * S), 820 * S, glossSize, f.ml, activeIdx, S, waiting)
     }
   } else {
     const fit = fitArabic(ctx, ayah.arabic, 900 * S, 4, f.ar)

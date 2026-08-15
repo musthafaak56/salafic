@@ -198,3 +198,20 @@ export function sentenceSplits(lines, segs, ml, sentence) {
   }
   return frags
 }
+
+// The word-by-word Malayalam glosses that belong to one Arabic line, one token
+// per timing segment (segments can cover several Arabic words that share a
+// single gloss). Kept in reading order so they can be drawn under the
+// sentence; segIndex identifies the segment for karaoke highlighting.
+export function lineGlosses(line, segs, ml) {
+  const out = []
+  const seen = new Set()
+  for (const unit of line) {
+    const si = segs.findIndex((s) => unit.i >= s[0] && unit.i < s[1])
+    if (si < 0 || seen.has(si)) continue
+    seen.add(si)
+    const text = (ml[si] || '').replace(/\r\n/g, ' ').trim()
+    if (text && text !== '*') out.push({ text, segIndex: si })
+  }
+  return out
+}
