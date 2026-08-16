@@ -26,6 +26,48 @@ import { fitArabicWords, activeLineOf, lineGlosses } from '../lib/wordWrap'
 import AppHeader from '../components/AppHeader'
 import LoadingState from '../components/LoadingState'
 
+const STEP_BUTTON_CLASS =
+  'inline-flex h-12 w-12 shrink-0 items-center justify-center rounded-xl border border-line bg-surface text-ink transition-colors duration-200 hover:bg-surface-subtle'
+
+// Module level (stable identity): a component defined inside the render body is
+// recreated on every state change, so React treats it as a new element type and
+// remounts it each keystroke - which blurs the input and loses the caret.
+function AyahStep({ label, value, onChange, min, max, dec, inc }) {
+  return (
+    <label className="block">
+      <span className="text-xs font-semibold tracking-wider text-ink-secondary uppercase">
+        {label}
+      </span>
+      <div className="mt-2 flex items-center gap-2">
+        <button
+          type="button"
+          aria-label={`${label} minus`}
+          onClick={dec}
+          className={STEP_BUTTON_CLASS}
+        >
+          <Minus className="h-4 w-4" />
+        </button>
+        <input
+          type="number"
+          min={min}
+          max={max}
+          value={value}
+          onChange={onChange}
+          className="h-12 w-full rounded-xl border border-line bg-surface px-3 text-sm tabular-nums text-ink focus:outline-2 focus:outline-primary"
+        />
+        <button
+          type="button"
+          aria-label={`${label} plus`}
+          onClick={inc}
+          className={STEP_BUTTON_CLASS}
+        >
+          <Plus className="h-4 w-4" />
+        </button>
+      </div>
+    </label>
+  )
+}
+
 export default function Quran() {
   const [surahs, setSurahs] = useState(null)
   const [reciter, setReciter] = useState(
@@ -574,44 +616,7 @@ export default function Quran() {
                 </select>
               </label>
 
-              {(() => {
-                const stepButton =
-                  'inline-flex h-12 w-12 shrink-0 items-center justify-center rounded-xl border border-line bg-surface text-ink transition-colors duration-200 hover:bg-surface-subtle'
-                const AyahStep = ({ label, value, onChange, min, max, dec, inc }) => (
-                  <label className="block">
-                    <span className="text-xs font-semibold tracking-wider text-ink-secondary uppercase">
-                      {label}
-                    </span>
-                    <div className="mt-2 flex items-center gap-2">
-                      <button
-                        type="button"
-                        aria-label={`${label} minus`}
-                        onClick={dec}
-                        className={stepButton}
-                      >
-                        <Minus className="h-4 w-4" />
-                      </button>
-                      <input
-                        type="number"
-                        min={min}
-                        max={max}
-                        value={value}
-                        onChange={onChange}
-                        className="h-12 w-full rounded-xl border border-line bg-surface px-3 text-sm tabular-nums text-ink focus:outline-2 focus:outline-primary"
-                      />
-                      <button
-                        type="button"
-                        aria-label={`${label} plus`}
-                        onClick={inc}
-                        className={stepButton}
-                      >
-                        <Plus className="h-4 w-4" />
-                      </button>
-                    </div>
-                  </label>
-                )
-                return (
-                  <div className="grid gap-4 sm:grid-cols-2">
+              <div className="grid gap-4 sm:grid-cols-2">
                     <AyahStep
                       label="From ayah"
                       value={startAyah}
@@ -649,8 +654,6 @@ export default function Quran() {
                       }
                     />
                   </div>
-                )
-              })()}
             </div>
           )}
 
