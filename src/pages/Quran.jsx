@@ -18,7 +18,7 @@ import {
 } from '../lib/quran'
 import { renderAyahVideo, renderAyahVideoOffline, hasOfflineSupport } from '../lib/quranVideo'
 import { loadKaraoke, ayahWords, activeWord } from '../lib/karaoke'
-import { fitArabicWords, activeLineOf, sentenceSplits, lineGlosses } from '../lib/wordWrap'
+import { fitArabicWords, activeLineOf, lineGlosses } from '../lib/wordWrap'
 import AppHeader from '../components/AppHeader'
 import LoadingState from '../components/LoadingState'
 
@@ -74,17 +74,11 @@ export default function Quran() {
     nowWords && activeWordIndex >= 0 ? nowWords.words.segs[activeWordIndex] : null
   const lineIndex = arabicWrap ? activeLineOf(arabicWrap.lines, activeSeg) : -1
 
-  // Real Malayalam sentence split into fragments that pair with each wrapped
-  // Arabic line, verified against the word-by-word glosses.
-  const mlSplits = useMemo(() => {
-    if (!arabicWrap || !nowWords?.words?.ml?.length || !nowWords.translation) return []
-    return sentenceSplits(
-      arabicWrap.lines,
-      nowWords.words.segs,
-      nowWords.words.ml,
-      nowWords.translation,
-    )
-  }, [arabicWrap, nowWords])
+  // The complete Malayalam meaning of the ayah, shown in full under the line.
+  const mlFull = useMemo(
+    () => (nowWords?.translation || '').replace(/\r\n/g, ' ').trim(),
+    [nowWords],
+  )
 
   // Word-by-word Malayalam glosses of each line, shown under the sentence.
   const glossRow = useMemo(() => {
@@ -812,13 +806,13 @@ export default function Quran() {
                     </div>
                   </div>
                 ) : null}
-                {mlSplits[lineIndex] ? (
+                {mlFull ? (
                   <p
                     dir="ltr"
                     style={{ fontFamily: fontPair.ml, fontSize: arabicWrap ? Math.round(arabicWrap.size * 1.2) : undefined, marginTop: arabicWrap ? `${Math.round(arabicWrap.size * 1.1)}px` : undefined }}
                     className="font-malayalam leading-relaxed font-medium text-ink transition-colors duration-300"
                   >
-                    {mlSplits[lineIndex]}
+                    {mlFull}
                   </p>
                 ) : null}
                 {(() => {
