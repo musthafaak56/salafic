@@ -2,8 +2,10 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   ArrowClockwise,
   DownloadSimple,
+  Minus,
   Pause,
   Play,
+  Plus,
   Repeat,
   Stop,
   VideoCamera,
@@ -572,37 +574,83 @@ export default function Quran() {
                 </select>
               </label>
 
-              <label className="block">
-                <span className="text-xs font-semibold tracking-wider text-ink-secondary uppercase">
-                  From ayah
-                </span>
-                <input
-                  type="number"
-                  min={1}
-                  max={ayahCount || 1}
-                  value={startAyah}
-                  onChange={(e) =>
-                    setStartAyah(e.target.value === '' ? '' : Number(e.target.value))
-                  }
-                  className="mt-2 h-12 w-full rounded-xl border border-line bg-surface px-3 text-sm tabular-nums text-ink focus:outline-2 focus:outline-primary"
-                />
-              </label>
-
-              <label className="block">
-                <span className="text-xs font-semibold tracking-wider text-ink-secondary uppercase">
-                  To ayah
-                </span>
-                <input
-                  type="number"
-                  min={clampedStart}
-                  max={ayahCount || 1}
-                  value={endAyah}
-                  onChange={(e) =>
-                    setEndAyah(e.target.value === '' ? '' : Number(e.target.value))
-                  }
-                  className="mt-2 h-12 w-full rounded-xl border border-line bg-surface px-3 text-sm tabular-nums text-ink focus:outline-2 focus:outline-primary"
-                />
-              </label>
+              {(() => {
+                const stepButton =
+                  'inline-flex h-12 w-12 shrink-0 items-center justify-center rounded-xl border border-line bg-surface text-ink transition-colors duration-200 hover:bg-surface-subtle'
+                const AyahStep = ({ label, value, onChange, min, max, dec, inc }) => (
+                  <label className="block">
+                    <span className="text-xs font-semibold tracking-wider text-ink-secondary uppercase">
+                      {label}
+                    </span>
+                    <div className="mt-2 flex items-center gap-2">
+                      <button
+                        type="button"
+                        aria-label={`${label} minus`}
+                        onClick={dec}
+                        className={stepButton}
+                      >
+                        <Minus className="h-4 w-4" />
+                      </button>
+                      <input
+                        type="number"
+                        min={min}
+                        max={max}
+                        value={value}
+                        onChange={onChange}
+                        className="h-12 w-full rounded-xl border border-line bg-surface px-3 text-sm tabular-nums text-ink focus:outline-2 focus:outline-primary"
+                      />
+                      <button
+                        type="button"
+                        aria-label={`${label} plus`}
+                        onClick={inc}
+                        className={stepButton}
+                      >
+                        <Plus className="h-4 w-4" />
+                      </button>
+                    </div>
+                  </label>
+                )
+                return (
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <AyahStep
+                      label="From ayah"
+                      value={startAyah}
+                      onChange={(e) =>
+                        setStartAyah(e.target.value === '' ? '' : Number(e.target.value))
+                      }
+                      min={1}
+                      max={ayahCount || 1}
+                      dec={() =>
+                        setStartAyah(Math.max(1, (Number(startAyah) || clampedStart) - 1))
+                      }
+                      inc={() =>
+                        setStartAyah(
+                          Math.min(ayahCount || 1, (Number(startAyah) || clampedStart) + 1),
+                        )
+                      }
+                    />
+                    <AyahStep
+                      label="To ayah"
+                      value={endAyah}
+                      onChange={(e) =>
+                        setEndAyah(e.target.value === '' ? '' : Number(e.target.value))
+                      }
+                      min={clampedStart}
+                      max={ayahCount || 1}
+                      dec={() =>
+                        setEndAyah(
+                          Math.max(clampedStart, (Number(endAyah) || clampedEnd) - 1),
+                        )
+                      }
+                      inc={() =>
+                        setEndAyah(
+                          Math.min(ayahCount || 1, (Number(endAyah) || clampedEnd) + 1),
+                        )
+                      }
+                    />
+                  </div>
+                )
+              })()}
             </div>
           )}
 

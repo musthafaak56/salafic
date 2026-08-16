@@ -199,6 +199,34 @@ function drawGlossRow(ctx, glosses, cx, top, width, size, fontFamily, activeSegI
   const gap = Math.round(10 * S)
   const padX = Math.round(fs * 0.9)
   const h = Math.round(fs * 2.0)
+  // Single gloss (the active pill): center both the chip and its text on the
+  // ink (glyph bounding box), not the advance width - Malayalam cluster glyphs
+  // (chillu, pre-base vowel signs, ZWJ joins) paint beyond the measured
+  // advance, which would leave the text visibly off-center in the chip.
+  if (glosses.length === 1) {
+    const g = glosses[0]
+    ctx.textAlign = 'left'
+    const m = ctx.measureText(g.text)
+    const left = typeof m.actualBoundingBoxLeft === 'number' ? m.actualBoundingBoxLeft : -m.width / 2
+    const right = typeof m.actualBoundingBoxRight === 'number' ? m.actualBoundingBoxRight : m.width / 2
+    const inkW = right - left
+    const bw = Math.round(inkW + padX * 2)
+    const x0 = Math.round(cx - inkW / 2 - padX - left)
+    const active = !waiting && g.segIndex === activeSegIndex
+    ctx.beginPath()
+    if (ctx.roundRect) ctx.roundRect(x0, top, bw, h, h / 2)
+    else ctx.rect(x0, top, bw, h)
+    ctx.fillStyle = active ? GOLD : 'rgba(194, 147, 60, 0.10)'
+    ctx.fill()
+    ctx.strokeStyle = active ? GOLD : 'rgba(194, 147, 60, 0.55)'
+    ctx.lineWidth = 2
+    ctx.stroke()
+    ctx.fillStyle = active ? NAVY : GOLD
+    ctx.textBaseline = 'middle'
+    ctx.fillText(g.text, Math.round(cx - (left + right) / 2), top + h / 2)
+    ctx.textBaseline = 'alphabetic'
+    return
+  }
   const tokens = glosses.map((g) => ({ g, w: ctx.measureText(g.text).width }))
   const rows = []
   let cur = []
@@ -381,7 +409,7 @@ function drawSlide(ctx, { surahLabel, surahNumber, ayah, index, total, words, ac
     const activeGloss = !waiting ? glosses.find((g) => g.segIndex === activeIdx) : null
     if (activeGloss) {
       const glossSize = Math.max(13, Math.round(fit.mlSize * 0.72))
-      drawGlossRow(ctx, [activeGloss], W / 2 + 4 * S, Math.round(fragBottom + 12 * S), 820 * S, glossSize, f.ml, activeGloss.segIndex, S, false)
+      drawGlossRow(ctx, [activeGloss], W / 2, Math.round(fragBottom + 12 * S), 820 * S, glossSize, f.ml, activeGloss.segIndex, S, false)
     }
   } else {
     const fallback = fitArabic(ctx, ayah.arabic, 900 * S, 4, f.ar)
