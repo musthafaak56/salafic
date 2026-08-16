@@ -4,8 +4,10 @@ import {
   DownloadSimple,
   Pause,
   Play,
+  Repeat,
   Stop,
   VideoCamera,
+  WhatsappLogo,
 } from '@phosphor-icons/react'
 import {
   RECITERS,
@@ -32,6 +34,7 @@ export default function Quran() {
   const [endAyah, setEndAyah] = useState(3)
 
   const [playing, setPlaying] = useState(false)
+  const [repeatAyah, setRepeatAyah] = useState(false)
   const [currentAyah, setCurrentAyah] = useState(null)
   const [playIndex, setPlayIndex] = useState(0)
 
@@ -130,8 +133,11 @@ export default function Quran() {
 
   const surah = surahs?.find((s) => s.number === surahNumber)
   const ayahCount = surah?.numberOfAyahs ?? 0
-  const clampedStart = Math.max(1, Math.min(startAyah, ayahCount || 1))
-  const clampedEnd = Math.max(clampedStart, Math.min(endAyah, ayahCount || 1))
+  const clampedStart = Math.max(1, Math.min(Number(startAyah) || 1, ayahCount || 1))
+  const clampedEnd = Math.max(
+    clampedStart,
+    Math.min(Number(endAyah) || 1, ayahCount || 1),
+  )
   const range = clampedEnd - clampedStart + 1
 
   function ayahList() {
@@ -233,6 +239,23 @@ export default function Quran() {
     if (advancingRef.current) return
     advancingRef.current = true
     try {
+      if (repeatAyah) {
+        // Repeat the current ayah: re-seek to its start and play again.
+        const el = audioRef.current
+        if (el) {
+          lastActiveRef.current = -1
+          setActiveWordIndex(-1)
+          if (surahMode(reciter)) {
+            seekToWordStart(el, nowWordRef.current)
+          } else {
+            el.currentTime = 0
+          }
+          el.play().catch(() => {
+            setPlaying(false)
+          })
+        }
+        return
+      }
       const next = playIndex + 1
       if (next < playQueueRef.current.length) {
         setPlayIndex(next)
@@ -558,7 +581,9 @@ export default function Quran() {
                   min={1}
                   max={ayahCount || 1}
                   value={startAyah}
-                  onChange={(e) => setStartAyah(Number(e.target.value))}
+                  onChange={(e) =>
+                    setStartAyah(e.target.value === '' ? '' : Number(e.target.value))
+                  }
                   className="mt-2 h-12 w-full rounded-xl border border-line bg-surface px-3 text-sm tabular-nums text-ink focus:outline-2 focus:outline-primary"
                 />
               </label>
@@ -572,7 +597,9 @@ export default function Quran() {
                   min={clampedStart}
                   max={ayahCount || 1}
                   value={endAyah}
-                  onChange={(e) => setEndAyah(Number(e.target.value))}
+                  onChange={(e) =>
+                    setEndAyah(e.target.value === '' ? '' : Number(e.target.value))
+                  }
                   className="mt-2 h-12 w-full rounded-xl border border-line bg-surface px-3 text-sm tabular-nums text-ink focus:outline-2 focus:outline-primary"
                 />
               </label>
@@ -627,6 +654,23 @@ export default function Quran() {
               {playing || currentAyah !== null ? (
                 <button
                   type="button"
+                  onClick={() => setRepeatAyah((r) => !r)}
+                  disabled={busy}
+                  aria-pressed={repeatAyah}
+                  title="Repeat the current ayah"
+                  className={`inline-flex h-12 items-center gap-2 rounded-full border px-5 text-sm font-medium transition-colors duration-200 ${
+                    repeatAyah
+                      ? 'border-gold bg-gold text-deep'
+                      : 'border-line bg-surface text-ink hover:bg-surface-subtle'
+                  }`}
+                >
+                  <Repeat className="h-4 w-4" weight={repeatAyah ? 'fill' : 'regular'} />
+                  Repeat
+                </button>
+              ) : null}
+              {playing || currentAyah !== null ? (
+                <button
+                  type="button"
                   onClick={stopPlayback}
                   disabled={busy}
                   className="inline-flex h-12 items-center gap-2 rounded-full border border-line bg-surface px-5 text-sm font-medium text-ink transition-colors duration-200 hover:bg-surface-subtle"
@@ -661,6 +705,19 @@ export default function Quran() {
                       : 'Rendering…'
                     : 'Download Video'}
               </button>
+              <a
+                href={`https://wa.me/?text=${encodeURIComponent(
+                  `${surah ? `${surah.englishName} (${surahNumber})` : `Surah ${surahNumber}`} — Ayahs ${clampedStart}–${clampedEnd} · ${
+                    RECITERS.find((r) => r.id === reciter)?.label ?? 'Quran audio'
+                  }\nListen here: https://salafic.web.app/quran`,
+                )}`}
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex h-12 items-center gap-2 rounded-full border border-line bg-surface px-6 font-display text-sm font-bold text-ink transition-transform duration-500 ease-out hover:scale-105"
+              >
+                <WhatsappLogo className="h-4 w-4" weight="fill" />
+                Share
+              </a>
             </div>
           ) : null}
 
