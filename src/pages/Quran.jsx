@@ -885,7 +885,7 @@ export default function Quran() {
                 {arabicWrap ? (
                   <div
                     dir="rtl"
-                    style={{ fontFamily: fontPair.ar, fontSize: arabicWrap.size, lineHeight: `${arabicWrap.leading}px` }}
+                    style={{ fontFamily: fontPair.ar, fontSize: Math.round(arabicWrap.size * 0.66), lineHeight: `${Math.round(arabicWrap.leading * 0.66)}px` }}
                     className="font-arabic text-ink"
                   >
                     <div
@@ -914,7 +914,7 @@ export default function Quran() {
                 {mlFull ? (
                   <p
                     dir="ltr"
-                    style={{ fontFamily: fontPair.ml, fontSize: arabicWrap ? Math.round(arabicWrap.size * 1.2) : undefined, marginTop: arabicWrap ? `${Math.round(arabicWrap.size * 1.1)}px` : undefined }}
+                    style={{ fontFamily: fontPair.ml, fontSize: arabicWrap ? Math.round(arabicWrap.size * 1.2 * 0.66) : undefined, marginTop: arabicWrap ? `${Math.round(arabicWrap.size * 1.1 * 0.66)}px` : undefined }}
                     className="font-malayalam leading-relaxed font-medium text-ink transition-colors duration-300"
                   >
                     {mlFull}
@@ -924,7 +924,9 @@ export default function Quran() {
                   const activeGloss =
                     activeSeg && glossRow[lineIndex]?.find((g) => g.segIndex === activeWordIndex)
                   if (!activeGloss) return null
-                  const fs = arabicWrap ? Math.max(13, Math.round(arabicWrap.size * 1.2 * 0.72)) : 14
+                  const fs = arabicWrap
+                    ? Math.max(13, Math.round(arabicWrap.size * 1.2 * 0.66 * 0.72))
+                    : 14
                   return (
                     <span
                       dir="ltr"
