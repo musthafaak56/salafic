@@ -616,7 +616,7 @@ export default function Quran() {
                 </select>
               </label>
 
-              <div className="grid gap-4 sm:grid-cols-2">
+              <div className="grid gap-4">
                     <AyahStep
                       label="From ayah"
                       value={startAyah}
