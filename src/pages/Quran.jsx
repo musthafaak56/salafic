@@ -22,7 +22,7 @@ import {
 } from '../lib/quran'
 import { renderAyahVideo, renderAyahVideoOffline, hasOfflineSupport } from '../lib/quranVideo'
 import { loadKaraoke, ayahWords, activeWord } from '../lib/karaoke'
-import { fitArabicWords, activeLineOf, lineGlosses } from '../lib/wordWrap'
+import { fitArabicWords, sentenceSplits, activeLineOf, lineGlosses } from '../lib/wordWrap'
 import AppHeader from '../components/AppHeader'
 import LoadingState from '../components/LoadingState'
 
@@ -107,25 +107,49 @@ export default function Quran() {
     measureCtxRef.current = document.createElement('canvas').getContext('2d')
   }
 
+  // The karaoke block is measured at its real rendered width (not the video's
+  // fixed 600px budget), so lines wrap exactly as drawn on screen — on narrow
+  // screens the Arabic shrinks instead of re-wrapping behind the highlights.
+  const karaokeBoxRef = useRef(null)
+  const [karaokeWidth, setKaraokeWidth] = useState(0)
+  useEffect(() => {
+    const el = karaokeBoxRef.current
+    if (!el) return
+    const ro = new ResizeObserver(() =>
+      setKaraokeWidth(Math.max(0, Math.round(el.clientWidth))),
+    )
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [playing])
+
   const arabicWrap = useMemo(() => {
     const words = nowWords?.words
-    if (!words?.ar?.length || !measureCtxRef.current) return null
+    if (!words?.ar?.length || !measureCtxRef.current || karaokeWidth < 40) return null
     return fitArabicWords(
       measureCtxRef.current,
       words.ar.map((text, i) => ({ text, i })),
       fontPair.ar,
+      karaokeWidth,
+      8,
     )
-  }, [nowWords, fontPair])
+  }, [nowWords, fontPair, karaokeWidth])
 
   const activeSeg =
     nowWords && activeWordIndex >= 0 ? nowWords.words.segs[activeWordIndex] : null
   const lineIndex = arabicWrap ? activeLineOf(arabicWrap.lines, activeSeg) : -1
 
-  // The complete Malayalam meaning of the ayah, shown in full under the line.
-  const mlFull = useMemo(
-    () => (nowWords?.translation || '').replace(/\r\n/g, ' ').trim(),
-    [nowWords],
-  )
+  // The complete Malayalam meaning of the ayah, split into one fragment per
+  // Arabic line (same partition the video renderer draws), so the sentence
+  // always reads under the exact line it translates.
+  const sentenceFrags = useMemo(() => {
+    if (!arabicWrap || !nowWords?.words?.ml?.length) return []
+    return sentenceSplits(
+      arabicWrap.lines,
+      nowWords.words.segs,
+      nowWords.words.ml,
+      nowWords.translation || '',
+    )
+  }, [arabicWrap, nowWords])
 
   // Word-by-word Malayalam glosses of each line, shown under the sentence.
   const glossRow = useMemo(() => {
@@ -875,7 +899,7 @@ export default function Quran() {
               <p className="text-xs font-semibold tracking-wider text-gold uppercase">
                 Now playing · {surahNumber}:{currentAyah}
               </p>
-              <div className="mt-4">
+              <div className="mt-4" ref={karaokeBoxRef}>
                 {nowWords.basmala ? (
                   <p
                     dir="rtl"
@@ -914,13 +938,13 @@ export default function Quran() {
                     </div>
                   </div>
                 ) : null}
-                {mlFull ? (
+                {sentenceFrags[lineIndex] ? (
                   <p
                     dir="ltr"
                     style={{ fontFamily: fontPair.ml, fontSize: arabicWrap ? Math.round(arabicWrap.size * 1.2 * 0.66) : undefined, marginTop: arabicWrap ? `${Math.round(arabicWrap.size * 1.1 * 0.66)}px` : undefined }}
                     className="font-malayalam leading-relaxed font-medium text-ink transition-colors duration-300"
                   >
-                    {mlFull}
+                    {sentenceFrags[lineIndex]}
                   </p>
                 ) : null}
                 {(() => {
@@ -931,25 +955,32 @@ export default function Quran() {
                     ? Math.max(13, Math.round(arabicWrap.size * 1.2 * 0.66 * 0.72))
                     : 14
                   return (
-                    <span
-                      dir="ltr"
-                      style={{
-                        fontFamily: fontPair.ml,
-                        fontSize: fs,
-                        marginTop: '14px',
-                        padding: `${Math.round(fs * 0.42)}px ${Math.round(fs * 0.9)}px`,
-                        borderRadius: '999px',
-                        borderWidth: '1.5px',
-                        borderStyle: 'solid',
-                        borderColor: 'var(--color-gold)',
-                        backgroundColor: 'var(--color-gold)',
-                        color: 'var(--color-ink)',
-                        fontWeight: 500,
-                        display: 'inline-block',
-                      }}
+                    <div
+                      className="flex justify-center"
+                      style={{ marginTop: '14px' }}
                     >
-                      {activeGloss.text}
-                    </span>
+                      <span
+                        dir="ltr"
+                        style={{
+                          fontFamily: fontPair.ml,
+                          fontSize: fs,
+                          padding: `${Math.round(fs * 0.42)}px ${Math.round(fs * 0.9)}px`,
+                          borderRadius: '999px',
+                          borderWidth: '1.5px',
+                          borderStyle: 'solid',
+                          borderColor: 'var(--color-gold)',
+                          backgroundColor: 'var(--color-gold)',
+                          color: 'var(--color-ink)',
+                          fontWeight: 500,
+                          display: 'inline-block',
+                          maxWidth: '100%',
+                          textAlign: 'center',
+                          lineHeight: 1.4,
+                        }}
+                      >
+                        {activeGloss.text}
+                      </span>
+                    </div>
                   )
                 })()}
               </div>
