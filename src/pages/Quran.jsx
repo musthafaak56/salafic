@@ -593,18 +593,58 @@ export default function Quran() {
     })
   }
 
-  // Keep redrawing while audio plays: progress bar and waveform advance, the
-  // karaoke word highlight follows the active segment.
-  useEffect(() => {
-    if (!playing) return
-    let raf = 0
-    const loop = () => {
-      raf = requestAnimationFrame(loop)
-      drawPreviewRef.current()
-    }
+  // Backing size adapts to the display: on small screens the canvas is sized to
+// the on-screen box (DPR, capped) instead of the video's 720x1280, so mobile
+// Safari paints ~half the pixels for a visually identical scaled frame; the
+// transform maps drawSlide's 720-space layout exactly, so nothing shifts.
+useEffect(() => {
+  const canvas = previewCanvasRef.current
+  if (!canvas) return
+  const fit = () => {
+    const ctx = canvas.getContext('2d')
+    const cssW = canvas.getBoundingClientRect().width
+    if (!cssW) return
+    const dpr = window.devicePixelRatio || 1
+    let backing
+    if (dpr <= 1.5) backing = VIDEO_W
+    else backing = Math.min(640, Math.max(300, Math.round(cssW * dpr)))
+    const k = backing / VIDEO_W
+    canvas.width = Math.round(VIDEO_W * k)
+    canvas.height = Math.round(VIDEO_H * k)
+    ctx.setTransform(k, 0, 0, k, 0, 0)
+  }
+  fit()
+  const ro = new ResizeObserver(fit)
+  ro.observe(canvas)
+  return () => ro.disconnect()
+}, [playing])
+
+// Keep redrawing while audio plays: progress bar and waveform advance, the
+// karaoke word highlight follows the active segment. Limited to 30fps - the
+// video itself plays at 25-30fps, so faster redraws are wasted work on
+// phones - and frames are skipped entirely while the preview is offscreen.
+useEffect(() => {
+  if (!playing) return
+  if (import.meta.env.DEV) window.__salaficPreviewDraw = () => drawPreviewRef.current()
+  let raf = 0
+  let last = 0
+  const FRAME_MS = Math.round(1000 / 30)
+  const loop = (now) => {
     raf = requestAnimationFrame(loop)
-    return () => cancelAnimationFrame(raf)
-  }, [playing])
+    if (now - last < FRAME_MS) return
+    const canvas = previewCanvasRef.current
+    if (!canvas) return
+    const rect = canvas.getBoundingClientRect()
+    if (rect.bottom < 0 || rect.top > window.innerHeight) return
+    last = now
+    drawPreviewRef.current()
+  }
+  raf = requestAnimationFrame(loop)
+  return () => {
+    cancelAnimationFrame(raf)
+    if (import.meta.env.DEV) delete window.__salaficPreviewDraw
+  }
+}, [playing])
 
   // Deterministic stand-in waveform used only when decoding is unavailable.
   const fallbackPeaks = Array.from({ length: 96 }, (_, i) =>
