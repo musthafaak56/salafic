@@ -11,13 +11,14 @@ import {
   EncodedPacket,
 } from 'mediabunny'
 
-const W = 720
-const H = 1280
+export const W = 720
+export const H = 1280
 const NAVY = '#011F3B'
 const CREAM = '#F7F4EF'
 const GOLD = '#C2933C'
-const PAD = 0.8
-const TAIL = 0.4
+export const PAD = 0.8
+export const TAIL = 0.4
+export const LEAD_IN = 0.3
 const MAX_SECONDS = 15 * 60
 
 const DEFAULT_FONTS = FONT_PAIRS[0]
@@ -127,11 +128,11 @@ function wrapArabicAt(ctx, units, size, maxWidth, fontFamily) {
 }
 
 // Precomputes the constant per-video layout: every ayah's Arabic lines wrap
-// at the same size (the minimum across the range), and the sentence + gloss
-// sizes are derived from it so nothing varies between ayahs. The sentence size
-// is the largest equal to or below the Arabic ratio (1.2x) at which the full
-// Malayalam sentence of every ayah still fits above the progress bar.
-function buildLayouts(slides, fontFamily, mlFontFamily) {
+  // at the same size (the minimum across the range), and the sentence + gloss
+  // sizes are derived from it so nothing varies between ayahs. The sentence size
+  // is the largest equal to or below the Arabic ratio (1.2x) at which the full
+  // Malayalam sentence of every ayah still fits above the progress bar.
+export function buildLayouts(slides, fontFamily, mlFontFamily) {
   const scratch = document.createElement('canvas').getContext('2d')
   const S = H / 1920
   const width = 900 * S
@@ -348,7 +349,11 @@ function ornament(ctx, cx, y, spread) {
   ctx.fill()
 }
 
-function drawSlide(ctx, { surahLabel, surahNumber, ayah, index, total, words, active, fit, fonts, reciterLabel, progress, waveform }) {
+// Draws a complete video frame for one slide on the shared 720x1280 canvas.
+  // The in-page live preview calls this directly with the same inputs the
+  // renderer uses, so what you see on the page is pixel-identical to the frame
+  // that gets recorded into the MP4.
+export function drawSlide(ctx, { surahLabel, surahNumber, ayah, index, total, words, active, fit, fonts, reciterLabel, progress, waveform }) {
   const f = fonts || DEFAULT_FONTS
   const S = H / 1920
   ctx.fillStyle = NAVY
@@ -764,8 +769,6 @@ export async function renderAyahVideo({ surahNumber, surahLabel, ayahs, reciter,
 const OFFLINE_FPS = 25
 const VIDEO_BITRATE = 5_500_000
 const AUDIO_BITRATE = 128_000
-const VIDEO_CODECS = ['avc1.640028', 'avc1.4d401e', 'avc1.42e01e', 'avc1.42001f']
-const LEAD_IN = 0.3
 
 // Renders a slideshow offline; the steps below are checkpointed to
 // sessionStorage, which survives the page reload Safari performs when the tab
@@ -825,9 +828,9 @@ function decodeBuffer(ctx, data) {
 }
 
 // Computes real peak amplitudes across the whole video timeline from the
-// decoded audio windows (silence gaps between ayahs stay near zero), so the
-// waveform drawn on each frame is the actual audio being recorded.
-function timelinePeaks(windows, totalDur, barCount = 96) {
+  // decoded audio windows (silence gaps between ayahs stay near zero), so the
+  // waveform drawn on each frame is the actual audio being recorded.
+export function timelinePeaks(windows, totalDur, barCount = 96) {
   const peaks = new Float32Array(barCount)
   if (!windows.length || totalDur <= 0) return peaks
   const sr = windows[0].buffer.sampleRate

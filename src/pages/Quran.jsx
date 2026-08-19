@@ -20,14 +20,38 @@ import {
   fetchSurahs,
   fetchSurahTexts,
 } from '../lib/quran'
-import { renderAyahVideo, renderAyahVideoOffline, hasOfflineSupport } from '../lib/quranVideo'
+import {
+  renderAyahVideo,
+  renderAyahVideoOffline,
+  hasOfflineSupport,
+  buildLayouts,
+  drawSlide,
+  timelinePeaks,
+  W as VIDEO_W,
+  H as VIDEO_H,
+  PAD,
+  TAIL,
+  LEAD_IN,
+} from '../lib/quranVideo'
 import { loadKaraoke, ayahWords, activeWord } from '../lib/karaoke'
-import { fitArabicWords, sentenceSplits, activeLineOf, lineGlosses } from '../lib/wordWrap'
 import AppHeader from '../components/AppHeader'
 import LoadingState from '../components/LoadingState'
 
 const STEP_BUTTON_CLASS =
   'inline-flex h-12 w-12 shrink-0 items-center justify-center rounded-xl border border-line bg-surface text-ink transition-colors duration-200 hover:bg-surface-subtle'
+
+// Decoded waveform peaks per (reciter, surah, range), single-slot-ish cache so
+// the preview shows the real audio's waveform exactly like the video without
+// re-decoding on every replay.
+const peaksCacheRef = new Map()
+function cachePeaks(key, value) {
+  if (peaksCacheRef.has(key)) return
+  peaksCacheRef.set(key, value)
+  if (peaksCacheRef.size > 3) {
+    const oldest = peaksCacheRef.keys().next().value
+    peaksCacheRef.delete(oldest)
+  }
+}
 
 // Module level (stable identity): a component defined inside the render body is
 // recreated on every state change, so React treats it as a new element type and
@@ -99,65 +123,21 @@ export default function Quran() {
   )
   const fontPair = FONT_PAIRS.find((p) => p.id === fontPairId) || FONT_PAIRS[0]
 
-  // Shared canvas for measuring Arabic words with the exact same font ladder
-  // as the video renderer, so the line revealed on the page is the same line
-  // revealed in the video at the same moment.
-  const measureCtxRef = useRef(null)
-  if (!measureCtxRef.current && typeof document !== 'undefined') {
-    measureCtxRef.current = document.createElement('canvas').getContext('2d')
-  }
-
-  // The karaoke block is measured at its real rendered width (not the video's
-  // fixed 600px budget), so lines wrap exactly as drawn on screen — on narrow
-  // screens the Arabic shrinks instead of re-wrapping behind the highlights.
-  const karaokeBoxRef = useRef(null)
-  const [karaokeWidth, setKaraokeWidth] = useState(0)
+  const [surahTexts, setSurahTexts] = useState(null)
+  const surahTextsRef = useRef(null)
   useEffect(() => {
-    const el = karaokeBoxRef.current
-    if (!el) return
-    const ro = new ResizeObserver(() =>
-      setKaraokeWidth(Math.max(0, Math.round(el.clientWidth))),
-    )
-    ro.observe(el)
-    return () => ro.disconnect()
-  }, [playing])
-
-  const arabicWrap = useMemo(() => {
-    const words = nowWords?.words
-    if (!words?.ar?.length || !measureCtxRef.current || karaokeWidth < 40) return null
-    return fitArabicWords(
-      measureCtxRef.current,
-      words.ar.map((text, i) => ({ text, i })),
-      fontPair.ar,
-      karaokeWidth,
-      8,
-    )
-  }, [nowWords, fontPair, karaokeWidth])
-
-  const activeSeg =
-    nowWords && activeWordIndex >= 0 ? nowWords.words.segs[activeWordIndex] : null
-  const lineIndex = arabicWrap ? activeLineOf(arabicWrap.lines, activeSeg) : -1
-
-  // The complete Malayalam meaning of the ayah, split into one fragment per
-  // Arabic line (same partition the video renderer draws), so the sentence
-  // always reads under the exact line it translates.
-  const sentenceFrags = useMemo(() => {
-    if (!arabicWrap || !nowWords?.words?.ml?.length) return []
-    return sentenceSplits(
-      arabicWrap.lines,
-      nowWords.words.segs,
-      nowWords.words.ml,
-      nowWords.translation || '',
-    )
-  }, [arabicWrap, nowWords])
-
-  // Word-by-word Malayalam glosses of each line, shown under the sentence.
-  const glossRow = useMemo(() => {
-    if (!arabicWrap || !nowWords?.words?.ml?.length) return []
-    return arabicWrap.lines.map((line) =>
-      lineGlosses(line, nowWords.words.segs, nowWords.words.ml),
-    )
-  }, [arabicWrap, nowWords])
+    let alive = true
+    surahTextsRef.current = null
+    setSurahTexts(null)
+    fetchSurahTexts(surahNumber).then((t) => {
+      if (!alive) return
+      surahTextsRef.current = t
+      setSurahTexts(t)
+    })
+    return () => {
+      alive = false
+    }
+  }, [surahNumber])
 
   const audioRef = useRef(null)
   const playQueueRef = useRef([])
@@ -174,6 +154,9 @@ export default function Quran() {
   )
   const nowAyahRef = useRef(0)
   const lastActiveRef = useRef(-1)
+  // Real durations of already-played ayahs (per-ayah mode), so the preview's
+  // progress timeline tracks the video's decoded timeline as it plays.
+  const durRef = useRef(new Map())
 
   useEffect(() => {
     fetchSurahs().then(setSurahs)
@@ -212,6 +195,28 @@ export default function Quran() {
     return Array.from({ length: range }, (_, i) => clampedStart + i)
   }
 
+  // The live preview redraws the video's frame on a canvas; its layout (the
+  // constant Arabic size across the range, sentence size, gloss size) is the
+  // exact same buildLayouts pass the video renderer runs, so the preview is
+  // pixel-identical to the MP4 the download produces.
+  const previewDataRef = useRef(null)
+  const previewFit = useMemo(() => {
+    const texts = surahTextsRef.current
+    const karaoke = karaokeRef.current
+    if (!texts || !karaoke) return null
+    const slides = ayahList().map((n) => {
+      const ayah = texts.ayahs[n - 1]
+      if (!ayah) return null
+      return {
+        ayah,
+        words: ayahWords(karaoke.timings, karaoke.ml, surahNumber, n, ayah.arabic) || null,
+      }
+    })
+    if (slides.some((s) => !s)) return null
+    previewDataRef.current = slides
+    return buildLayouts(slides, fontPair.ar, fontPair.ml)
+  }, [surahTexts, nowWords, fontPair, clampedStart, clampedEnd, reciter, surahNumber])
+
   async function loadNowWords(ayahNumber) {
     try {
       if (!karaokeRef.current) {
@@ -223,7 +228,7 @@ export default function Quran() {
         nowWordRef.current = null
         return
       }
-      const texts = await fetchSurahTexts(surahNumber)
+      const texts = surahTextsRef.current || (await fetchSurahTexts(surahNumber))
       const ayah = texts.ayahs[ayahNumber - 1]
       if (!ayah) {
         setNowWords(null)
@@ -368,6 +373,8 @@ export default function Quran() {
 
   function handleTimeUpdate() {
     if (currentAyah === null || !audioRef.current) return
+    const el = audioRef.current
+    if (isFinite(el.duration) && !surahMode(reciter)) durRef.current.set(currentAyah, el.duration)
     const bundle = nowWordRef.current
     const segs = bundle?.words?.segs
     if (!segs) return
@@ -412,6 +419,197 @@ export default function Quran() {
     setActiveWordIndex(-1)
     playQueueRef.current = []
   }
+
+  // --- Live preview: redraw the exact video frame on a canvas -------------
+
+  const previewCanvasRef = useRef(null)
+  const [previewPeaks, setPreviewPeaks] = useState(null)
+  // Real decoded durations per ayah for the per-ayah mode timeline (matching
+  // the video's decoded timeline exactly once every ayah has played).
+  const previewDursRef = useRef(new Map())
+  const activeWordRef = useRef(-1)
+  useEffect(() => {
+    activeWordRef.current = activeWordIndex
+  }, [activeWordIndex])
+
+  // Decode the range's audio once and compute the same real waveform the video
+  // shows (same timelinePeaks pass); synthetic bars stand in until the decode
+  // lands or when the browser cannot decode (e.g. iOS surah files).
+  useEffect(() => {
+    if (!playing) return
+    let alive = true
+    const key = `${reciter}:${surahNumber}:${clampedStart}-${clampedEnd}`
+    if (peaksCacheRef.has(key)) {
+      setPreviewPeaks(peaksCacheRef.get(key))
+      return
+    }
+    const nums = ayahList()
+    const texts = surahTextsRef.current
+    const karaoke = karaokeRef.current
+    const durs = nums.map((n) => {
+      const ayah = texts?.ayahs?.[n - 1]
+      const w = karaoke && ayah
+        ? (() => {
+            try {
+              return ayahWords(karaoke.timings, karaoke.ml, surahNumber, n, ayah.arabic)
+            } catch {
+              return null
+            }
+          })()
+        : null
+      if (w && typeof w.startMs === 'number' && typeof w.endMs === 'number') {
+        return { dur: (w.endMs - w.startMs) / 1000, windowStart: w.startMs / 1000 }
+      }
+      return null
+    })
+    ;(async () => {
+      try {
+        const AC = window.AudioContext || window.webkitAudioContext
+        if (!AC) throw new Error('no-ac')
+        const ac = new AC()
+        const buffers = []
+        if (surahMode(reciter)) {
+          const res = await fetch(surahAudioUrl(reciter, surahNumber))
+          if (!res.ok) throw new Error('fetch')
+          buffers.push(await ac.decodeAudioData(await res.arrayBuffer()))
+        } else {
+          for (const n of nums) {
+            const res = await fetch(ayahUrl(reciter, surahNumber, n))
+            if (!res.ok) throw new Error('fetch')
+            buffers.push(await ac.decodeAudioData(await res.arrayBuffer()))
+          }
+        }
+        const timeline = []
+        let t = 0
+        for (let i = 0; i < nums.length; i++) {
+          const w = durs[i]
+          const dur = w
+            ? w.dur
+            : surahMode(reciter)
+              ? buffers[0].duration / nums.length
+              : buffers[i].duration
+          timeline.push({
+            buffer: buffers[surahMode(reciter) ? 0 : i],
+            start: w ? w.windowStart : 0,
+            dur,
+            audioAt: t,
+          })
+          previewDursRef.current.set(nums[i], dur)
+          t += dur + PAD
+        }
+        const totalDur = t - PAD + LEAD_IN + TAIL
+        const peaks = timelinePeaks(timeline, totalDur)
+        if (alive) {
+          cachePeaks(key, peaks)
+          setPreviewPeaks(peaks)
+        }
+        ac.close().catch(() => {})
+      } catch {
+        if (alive) setPreviewPeaks(null)
+      }
+    })()
+    return () => {
+      alive = false
+    }
+  }, [playing, reciter, surahNumber, clampedStart, clampedEnd])
+
+  // Draws one video frame from the current playback state.
+  const drawPreviewRef = useRef(null)
+  drawPreviewRef.current = () => {
+    const canvas = previewCanvasRef.current
+    const ctx = canvas?.getContext('2d')
+    if (!ctx || currentAyah === null) return
+    const surah = surahs?.find((s) => s.number === surahNumber)
+    const texts = surahTextsRef.current
+    const nums = playQueueRef.current
+    const index = nums.indexOf(currentAyah)
+    if (!surah || !texts || index < 0) return
+    const ayah = texts.ayahs[currentAyah - 1]
+    if (!ayah) return
+    const slides = previewDataRef.current
+    const fit = slides ? previewFit?.[index] : null
+
+    // Playback timeline mirroring the offline renderer: each ayah starts PAD
+    // after the previous one (LEAD_IN after its audio), total adds TAIL.
+    let audioAt = 0
+    const durs = []
+    for (let i = 0; i < nums.length; i++) {
+      const n = nums[i]
+      const slide = slides?.[i]
+      const w = slide?.words
+      let dur = null
+      if (w && typeof w.startMs === 'number' && typeof w.endMs === 'number') {
+        dur = (w.endMs - w.startMs) / 1000
+      } else if (surahMode(reciter) && previewDursRef.current.has(n)) {
+        dur = previewDursRef.current.get(n)
+      } else if (durRef.current.has(n)) {
+        dur = durRef.current.get(n)
+      }
+      if (!dur) {
+        dur = audioRef.current?.duration && isFinite(audioRef.current.duration)
+          ? audioRef.current.duration
+          : 4
+      }
+      durs.push(dur)
+    }
+    for (let i = 0; i < index; i++) audioAt += durs[i] + PAD
+
+    const bundle = nowWordRef.current
+    const w = bundle?.words
+    let elapsedInAyah = 0
+    const t = audioRef.current?.currentTime
+    if (typeof t === 'number' && isFinite(t)) {
+      if (surahMode(reciter) && w && typeof w.startMs === 'number') {
+        elapsedInAyah = Math.max(0, t - w.startMs / 1000)
+      } else if (!surahMode(reciter)) {
+        elapsedInAyah = Math.max(0, t)
+      }
+    }
+    elapsedInAyah = Math.min(elapsedInAyah, durs[index])
+    const totalDur = durs.reduce((a, b) => a + b, 0) + PAD * (nums.length - 1) + LEAD_IN + TAIL
+    const fraction = Math.max(0, Math.min(1, (audioAt + LEAD_IN + elapsedInAyah) / totalDur))
+    const splits = slides
+      ? slides.map((s, i) => {
+          let at = 0
+          for (let j = 0; j < i; j++) at += durs[j] + PAD
+          return { at: (at + LEAD_IN) / totalDur, label: s.ayah.number }
+        })
+      : []
+
+    const peaks = previewPeaks || fallbackPeaks
+    drawSlide(ctx, {
+      surahLabel: surah.englishName,
+      surahNumber,
+      ayah,
+      index,
+      total: nums.length,
+      words: bundle?.words || null,
+      active: activeWordRef.current,
+      fit,
+      fonts: fontPair,
+      reciterLabel: RECITERS.find((r) => r.id === reciter)?.label || reciter,
+      progress: { fraction, splits },
+      waveform: { peaks, fraction },
+    })
+  }
+
+  // Keep redrawing while audio plays: progress bar and waveform advance, the
+  // karaoke word highlight follows the active segment.
+  useEffect(() => {
+    if (!playing) return
+    let raf = 0
+    const loop = () => {
+      raf = requestAnimationFrame(loop)
+      drawPreviewRef.current()
+    }
+    raf = requestAnimationFrame(loop)
+    return () => cancelAnimationFrame(raf)
+  }, [playing])
+
+  // Deterministic stand-in waveform used only when decoding is unavailable.
+  const fallbackPeaks = Array.from({ length: 96 }, (_, i) =>
+    0.18 + 0.55 * Math.abs(Math.sin(i * 0.63 + 0.4)) * (0.4 + 0.6 * Math.abs(Math.sin(i * 0.37))),
+  )
 
   function togglePlay() {
     if (playing) {
@@ -894,95 +1092,18 @@ export default function Quran() {
             </p>
           ) : null}
 
-          {playing && currentAyah !== null && nowWords ? (
-            <div className="mt-6 rounded-2xl border border-line bg-surface p-5 text-center sm:p-7">
-              <p className="text-xs font-semibold tracking-wider text-gold uppercase">
-                Now playing · {surahNumber}:{currentAyah}
+          {playing && currentAyah !== null ? (
+            <div className="mx-auto mt-6 w-full max-w-sm">
+              <p className="mb-3 text-center text-xs font-semibold tracking-wider text-gold uppercase">
+                Live preview — exactly what your video will look like
               </p>
-              <div className="mt-4" ref={karaokeBoxRef}>
-                {nowWords.basmala ? (
-                  <p
-                    dir="rtl"
-                    style={{ fontFamily: fontPair.ar }}
-                    className="mb-3 font-arabic text-lg text-gold sm:text-xl"
-                  >
-                    بِسْمِ ٱللَّهِ ٱلرَّحْمَٰنِ ٱلرَّحِيمِ
-                  </p>
-                ) : null}
-                {arabicWrap ? (
-                  <div
-                    dir="rtl"
-                    style={{ fontFamily: fontPair.ar, fontSize: Math.round(arabicWrap.size * 0.66), lineHeight: `${Math.round(arabicWrap.leading * 0.66)}px` }}
-                    className="font-arabic text-ink"
-                  >
-                    <div
-                      className={`transition-opacity duration-300 ${
-                        activeSeg ? '' : 'opacity-40'
-                      }`}
-                    >
-                      {arabicWrap.lines[lineIndex].map((unit) => (
-                        <span
-                          key={unit.i}
-                          className={`inline-block transition-colors duration-200 ${
-                            activeSeg && unit.i >= activeSeg[0] && unit.i < activeSeg[1]
-                              ? 'text-gold'
-                              : ''
-                          }`}
-                        >
-                          {unit.text}
-                          {unit !== arabicWrap.lines[lineIndex][arabicWrap.lines[lineIndex].length - 1]
-                            ? '\u00A0'
-                            : ''}
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-                ) : null}
-                {sentenceFrags[lineIndex] ? (
-                  <p
-                    dir="ltr"
-                    style={{ fontFamily: fontPair.ml, fontSize: arabicWrap ? Math.round(arabicWrap.size * 1.2 * 0.66) : undefined, marginTop: arabicWrap ? `${Math.round(arabicWrap.size * 1.1 * 0.66)}px` : undefined }}
-                    className="font-malayalam leading-relaxed font-medium text-ink transition-colors duration-300"
-                  >
-                    {sentenceFrags[lineIndex]}
-                  </p>
-                ) : null}
-                {(() => {
-                  const activeGloss =
-                    activeSeg && glossRow[lineIndex]?.find((g) => g.segIndex === activeWordIndex)
-                  if (!activeGloss) return null
-                  const fs = arabicWrap
-                    ? Math.max(13, Math.round(arabicWrap.size * 1.2 * 0.66 * 0.72))
-                    : 14
-                  return (
-                    <div
-                      className="flex justify-center"
-                      style={{ marginTop: '14px' }}
-                    >
-                      <span
-                        dir="ltr"
-                        style={{
-                          fontFamily: fontPair.ml,
-                          fontSize: fs,
-                          padding: `${Math.round(fs * 0.42)}px ${Math.round(fs * 0.9)}px`,
-                          borderRadius: '999px',
-                          borderWidth: '1.5px',
-                          borderStyle: 'solid',
-                          borderColor: 'var(--color-gold)',
-                          backgroundColor: 'var(--color-gold)',
-                          color: 'var(--color-ink)',
-                          fontWeight: 500,
-                          display: 'inline-block',
-                          maxWidth: '100%',
-                          textAlign: 'center',
-                          lineHeight: 1.4,
-                        }}
-                      >
-                        {activeGloss.text}
-                      </span>
-                    </div>
-                  )
-                })()}
+              <div className="overflow-hidden rounded-2xl border border-line shadow-xl">
+                <canvas
+                  ref={previewCanvasRef}
+                  width={VIDEO_W}
+                  height={VIDEO_H}
+                  className="block h-auto w-full"
+                />
               </div>
             </div>
           ) : null}
