@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useState } from 'react'
-import { getLatestPrayerTimes } from '../lib/firestore'
+import { getLatestPrayerTimes, getEvents } from '../lib/firestore'
 import {
   format12h,
   formatDateTime,
   formatHMS,
   getNextPrayer,
   isStalePrayerTimes,
+  occursOnDay,
   prayerEntry,
   prayerKeysForDate,
   secondsUntil,
@@ -35,16 +36,18 @@ function useNow(ms = 1000) {
   return now
 }
 
-function usePrayerTimes() {
+function useTvData() {
   const [times, setTimes] = useState(null)
+  const [events, setEvents] = useState(null)
   const [error, setError] = useState(false)
   useEffect(() => {
     let alive = true
     const load = async () => {
       try {
-        const t = await getLatestPrayerTimes()
+        const [t, ev] = await Promise.all([getLatestPrayerTimes(), getEvents()])
         if (alive) {
           setTimes(t)
+          setEvents(ev)
           setError(false)
         }
       } catch {
@@ -58,7 +61,7 @@ function usePrayerTimes() {
       clearInterval(id)
     }
   }, [])
-  return { times, error }
+  return { times, events, error }
 }
 
 // Two overlapping squares form the eight-point star behind the clock.
@@ -122,7 +125,7 @@ const LATTICE =
 
 function PrayerTv() {
   const now = useNow(1000)
-  const { times, error } = usePrayerTimes()
+  const { times, events, error } = useTvData()
   const [hint, setHint] = useState(true)
   const [fullscreen, setFullscreen] = useState(false)
 
@@ -159,6 +162,35 @@ function PrayerTv() {
     [times, now, keys],
   )
   const stale = times ? isStalePrayerTimes(times, now) : false
+
+  // Events occurring today, earliest first; the first not-yet-started one is
+  // the "up next" highlight. Weekly events store an anchor date in eventAt,
+  // so their effective time is rolled forward onto today before comparing.
+  const todaysEvents = useMemo(() => {
+    if (!events) return []
+    const today = new Date()
+    const effective = (ev) => {
+      const d = new Date(ev.eventAt)
+      if (ev.repeat === 'weekly') {
+        return new Date(
+          today.getFullYear(),
+          today.getMonth(),
+          today.getDate(),
+          d.getHours(),
+          d.getMinutes(),
+        )
+      }
+      return d
+    }
+    return events
+      .filter((e) => occursOnDay(e, today))
+      .map((e) => ({ ...e, effective: effective(e) }))
+      .sort((a, b) => a.effective - b.effective)
+  }, [events])
+  const nextEventIndex = useMemo(() => {
+    const t = now.getTime()
+    return todaysEvents.findIndex((e) => e.effective.getTime() >= t)
+  }, [todaysEvents, now])
 
   // Two-phase countdown: toward the adhaan first, then toward the iqama,
   // then the next (or tomorrow's) prayer takes over.
@@ -285,6 +317,52 @@ function PrayerTv() {
                 )
               })}
             </ul>
+
+            {todaysEvents.length > 0 ? (
+              <div className="mt-[3.2vh]">
+                <p className="mb-[1.6vh] text-[11px] font-semibold tracking-[0.42em] text-[#9db0a2] uppercase">
+                  Today&rsquo;s Events
+                </p>
+                <ul className="space-y-[1.1vh]">
+                  {todaysEvents.map((ev, i) => {
+                    const upcoming = i === nextEventIndex
+                    const pending = i > nextEventIndex
+                    return (
+                      <li
+                        key={ev.id}
+                        className={`flex items-baseline gap-x-4 rounded-xl px-5 py-[0.8vh] transition-opacity duration-500 ${
+                          upcoming
+                            ? 'border border-[#d8b468]/25 bg-white/[0.045]'
+                            : 'opacity-60'
+                        }`}
+                      >
+                        <span className="font-display w-28 shrink-0 text-lg font-semibold tabular-nums text-[#e8c98c]">
+                          {ev.effective.toLocaleTimeString('en-IN', {
+                            hour: 'numeric',
+                            minute: '2-digit',
+                          })}
+                        </span>
+                        <span className="min-w-0">
+                          <span className="block truncate text-[17px] font-medium text-[#f3ecd9]">
+                            {ev.titleMl || ev.title}
+                          </span>
+                          {upcoming ? (
+                            <span className="mt-0.5 block text-[11px] tracking-[0.24em] text-[#d8b468]/80 uppercase">
+                              Up next
+                            </span>
+                          ) : null}
+                          {pending ? (
+                            <span className="mt-0.5 block truncate text-[12px] text-[#9db0a2]">
+                              {ev.titleMl && ev.title !== ev.titleMl ? ev.title : ''}
+                            </span>
+                          ) : null}
+                        </span>
+                      </li>
+                    )
+                  })}
+                </ul>
+              </div>
+            ) : null}
           </div>
 
           {/* The clock */}
