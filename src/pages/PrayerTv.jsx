@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { getLatestPrayerTimes, getEvents } from '../lib/firestore'
+import { computePrayerTimes } from '../lib/computePrayerTimes'
 import {
   format12h,
   formatDateTime,
@@ -12,6 +13,10 @@ import {
   secondsUntil,
   todayISODate,
 } from '../lib/utils'
+
+// Coordinates used for the default "Cherukunnu Salafi Center" schedule and
+// the fallback when the published plan is out of date.
+const CHERUKUNNU = { lat: 11.9204, lng: 75.4991, name: 'Cherukunnu' }
 
 // TV screensaver for the masjid: a fullscreen, burn-in-safe display that
 // lives on its own fixed dark palette (theme-independent) and shows the
@@ -36,19 +41,46 @@ function useNow(ms = 1000) {
   return now
 }
 
-function useTvData() {
+// Fetches the schedule for the active source. `masjid` mode loads the
+// published plan and falls back to computed Cherukunnu times when it is
+// stale or missing; `current` mode uses the device location (the `geo`
+// note) and falls back to the masjid plan while locating or when access
+// is denied. A note string describes what is actually being shown.
+function useTvData(source, coords, geoStatus) {
   const [times, setTimes] = useState(null)
   const [events, setEvents] = useState(null)
+  const [note, setNote] = useState(null)
   const [error, setError] = useState(false)
   useEffect(() => {
     let alive = true
     const load = async () => {
       try {
-        const [t, ev] = await Promise.all([getLatestPrayerTimes(), getEvents()])
         if (alive) {
+          setEvents(await getEvents())
+        }
+        if (alive) setError(false)
+        if (source === 'current' && coords) {
+          if (alive) {
+            setTimes(computePrayerTimes(coords.lat, coords.lng, todayISODate()))
+            setNote('geo')
+          }
+          return
+        }
+        if (source === 'current' && !coords) {
+          // Still locating (or access denied) — show the masjid plan with a
+          // hint until the location resolves.
+          if (alive) setNote(geoStatus === 'denied' ? 'geo-denied' : 'locating')
+        }
+        const t = await getLatestPrayerTimes()
+        if (!alive) return
+        if (t && !isStalePrayerTimes(t)) {
           setTimes(t)
-          setEvents(ev)
-          setError(false)
+          if (source !== 'current') setNote(null)
+        } else {
+          setTimes(
+            computePrayerTimes(CHERUKUNNU.lat, CHERUKUNNU.lng, todayISODate()),
+          )
+          if (source !== 'current') setNote('computed')
         }
       } catch {
         if (alive) setError(true)
@@ -60,8 +92,8 @@ function useTvData() {
       alive = false
       clearInterval(id)
     }
-  }, [])
-  return { times, events, error }
+  }, [source, coords, geoStatus])
+  return { times, events, note, error }
 }
 
 // Two overlapping squares form the eight-point star behind the clock.
@@ -125,9 +157,47 @@ const LATTICE =
 
 function PrayerTv() {
   const now = useNow(1000)
-  const { times, events, error } = useTvData()
+  const [source, setSource] = useState(() => {
+    try {
+      return localStorage.getItem('salaficTvSource') || 'masjid'
+    } catch {
+      return 'masjid'
+    }
+  })
+  const [coords, setCoords] = useState(null)
+  const [geoStatus, setGeoStatus] = useState('idle')
+  const { times, events, note, error } = useTvData(source, coords, geoStatus)
   const [hint, setHint] = useState(true)
   const [fullscreen, setFullscreen] = useState(false)
+
+  const switchSource = (s) => {
+    setSource(s)
+    try {
+      localStorage.setItem('salaficTvSource', s)
+    } catch {}
+  }
+
+  // Locate the device once when "current location" mode is activated.
+  useEffect(() => {
+    if (source !== 'current' || coords) return
+    if (!('geolocation' in navigator)) {
+      setGeoStatus('denied')
+      return
+    }
+    setGeoStatus('locating')
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        setCoords({
+          lat: pos.coords.latitude,
+          lng: pos.coords.longitude,
+          name: 'current location',
+        })
+        setGeoStatus('ok')
+      },
+      () => setGeoStatus('denied'),
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 300000 },
+    )
+  }, [source, coords])
 
   useEffect(() => {
     const prevTitle = document.title
@@ -161,7 +231,17 @@ function PrayerTv() {
     () => (times ? getNextPrayer(times, now, keys) : null),
     [times, now, keys],
   )
-  const stale = times ? isStalePrayerTimes(times, now) : false
+  // What the schedule header above the clock says, depending on the source.
+  const scheduleLabel =
+    note === 'geo'
+      ? 'Times for your location'
+      : note === 'computed'
+        ? 'Computed for today'
+        : note === 'locating'
+          ? 'Locating your position…'
+          : note === 'geo-denied'
+            ? 'Location unavailable'
+            : 'Salah times for today'
 
   // Events occurring today, earliest first; the first not-yet-started one is
   // the "up next" highlight. Weekly events store an anchor date in eventAt,
@@ -248,6 +328,37 @@ function PrayerTv() {
       <StarOrnament />
       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(90%_70%_at_50%_115%,transparent_35%,rgba(2,6,4,0.6)_100%)]" />
       <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-white/25 to-transparent" />
+
+      <div className="absolute top-[3.6vh] left-1/2 z-20 hidden -translate-x-1/2 overflow-hidden rounded-full border border-white/12 bg-white/[0.04] text-[11px] font-semibold tracking-[0.2em] text-[#9db0a2] uppercase backdrop-blur-sm lg:block">
+        <button
+          type="button"
+          onClick={() => switchSource('masjid')}
+          className={`px-5 py-2 transition-colors ${
+            source === 'masjid' ? 'text-[#f3ecd9]' : 'hover:text-[#f3ecd9]'
+          }`}
+          style={
+            source === 'masjid'
+              ? { color: '#f3ecd9', background: 'rgba(216,180,104,0.16)' }
+              : undefined
+          }
+        >
+          Cherukunnu Masjid
+        </button>
+        <button
+          type="button"
+          onClick={() => switchSource('current')}
+          className={`px-5 py-2 transition-colors ${
+            source === 'current' ? 'text-[#f3ecd9]' : 'hover:text-[#f3ecd9]'
+          }`}
+          style={
+            source === 'current'
+              ? { color: '#f3ecd9', background: 'rgba(216,180,104,0.16)' }
+              : undefined
+          }
+        >
+          Current Location
+        </button>
+      </div>
 
       <header className="relative z-10 flex items-start justify-between px-[4vw] pt-[3.2vh]">
         <div className="flex items-center gap-4">
@@ -369,7 +480,7 @@ function PrayerTv() {
           <div className="col-span-12 order-first lg:order-none lg:col-span-4">
             <div key={clock.mm} className="animate-tv-fade-up text-center">
               <p className="mb-[1vh] text-[11px] font-semibold tracking-[0.42em] text-[#9db0a2] uppercase">
-                {stale ? 'Published plan awaiting update' : 'Salah times for today'}
+                {scheduleLabel}
               </p>
               <div className="font-display flex items-baseline justify-center font-extrabold tabular-nums leading-none text-[#f3ecd9]">
                 <span className="text-[clamp(6.5rem,17vh,14rem)] tracking-tight">
@@ -461,12 +572,20 @@ function PrayerTv() {
             />
           ))}
         </div>
-        <div className="mt-[1.4vh] flex items-center justify-between">
+        <div className="mt-[1.4vh] flex items-center justify-between gap-4">
           <p className="text-[10px] tracking-[0.3em] text-[#9db0a2]/70 uppercase">
             {times ? `Updated ${formatDateTime(times.updatedAt)}` : 'Loading…'}
           </p>
-          <p className="text-[10px] tracking-[0.3em] text-[#9db0a2]/70 uppercase">
-            Salafi Center Cherukunnu
+          <p className="hidden truncate text-[10px] tracking-[0.3em] text-[#9db0a2]/70 uppercase sm:block">
+            {note === 'computed'
+              ? 'Published plan pending update · computed for Cherukunnu'
+              : note === 'geo' && coords
+                ? `Computed for your location · ${coords.lat.toFixed(2)}°N ${coords.lng.toFixed(2)}°E`
+                : note === 'geo-denied'
+                  ? 'Location access denied · showing Cherukunnu times'
+                  : note === 'locating'
+                    ? 'Locating your position…'
+                    : 'Salafi Center Cherukunnu'}
           </p>
         </div>
       </footer>
