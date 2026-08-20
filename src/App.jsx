@@ -17,6 +17,7 @@ import Forms from './pages/admin/Forms'
 import FormBuilder from './pages/admin/FormBuilder'
 import FormSubmissions from './pages/admin/FormSubmissions'
 import PublicForm from './pages/PublicForm'
+import PrayerTv from './pages/PrayerTv'
 
 const adminPages = (
   <>
@@ -43,6 +44,7 @@ function App() {
             <Route path="/" element={<Home />} />
             <Route path="/quran" element={<Quran />} />
             <Route path="/qhl-documents" element={<QhlsDocuments />} />
+            <Route path="/tv" element={<PrayerTv />} />
             <Route path="/forms/:formId" element={<PublicForm />} />
             <Route
               path="/admin"
