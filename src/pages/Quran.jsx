@@ -92,6 +92,34 @@ function AyahStep({ label, value, onChange, min, max, dec, inc }) {
   )
 }
 
+// Triggers a browser download for a blob with the given file name.
+function saveBlob(blob, name) {
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = name
+  document.body.appendChild(a)
+  a.click()
+  a.remove()
+  setTimeout(() => URL.revokeObjectURL(url), 10000)
+  return name
+}
+
+// Extracts a mono Float32Array from an AudioBuffer, downmixing a stereo buffer
+// by averaging the channels (the worker encodes mono at 64 kbps).
+function bufferToMono(buf) {
+  const n = buf.length
+  const mono = new Float32Array(n)
+  if (buf.numberOfChannels === 1) {
+    mono.set(buf.getChannelData(0))
+  } else {
+    const l = buf.getChannelData(0)
+    const r = buf.getChannelData(1)
+    for (let i = 0; i < n; i++) mono[i] = (l[i] + r[i]) * 0.5
+  }
+  return mono
+}
+
 export default function Quran() {
   const [surahs, setSurahs] = useState(null)
   const [reciter, setReciter] = useState(
@@ -112,6 +140,7 @@ export default function Quran() {
   const [downloading, setDownloading] = useState(false)
   const [progress, setProgress] = useState({ done: 0, total: 0 })
   const [downloadName, setDownloadName] = useState('')
+  const [compact, setCompact] = useState(false)
 
   const [video, setVideo] = useState('idle')
   const [renderMode, setRenderMode] = useState(null)
@@ -673,15 +702,7 @@ useEffect(() => {
         const blob = await res.blob()
         setProgress({ done: 1, total: 1 })
         const name = `${(surah?.englishName || `Surah ${surahNumber}`).replace(/[^A-Za-z0-9-]+/g, '_')}_${reciter}.mp3`
-        const url = URL.createObjectURL(blob)
-        const a = document.createElement('a')
-        a.href = url
-        a.download = name
-        document.body.appendChild(a)
-        a.click()
-        a.remove()
-        setTimeout(() => URL.revokeObjectURL(url), 10000)
-        setDownloadName(name)
+        setDownloadName(saveBlob(blob, name))
         return
       }
       setProgress({ done: 0, total: list.length })
@@ -694,19 +715,107 @@ useEffect(() => {
       }
       const blob = new Blob(parts, { type: 'audio/mpeg' })
       const name = `${(surah?.englishName || `Surah ${surahNumber}`).replace(/[^A-Za-z0-9-]+/g, '_')}_${clampedStart}-${clampedEnd}_${reciter}.mp3`
-      const url = URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = url
-      a.download = name
-      document.body.appendChild(a)
-      a.click()
-      a.remove()
-      setTimeout(() => URL.revokeObjectURL(url), 10000)
-      setDownloadName(name)
+      setDownloadName(saveBlob(blob, name))
     } catch (err) {
       setDownloadName('')
       window.alert(`Download failed: ${err.message}`)
     } finally {
+      setDownloading(false)
+    }
+  }
+
+  // "Compact MP3": re-encodes the range at 64 kbps mono (via a worker) so the
+  // file is roughly half the CDN's 128 kbps stereo source - optional and
+  // slower, chosen with the separate button. Whole-surah reciters (Dukhain)
+  // get a range-trimmed file out of it too, instead of the whole surah.
+  async function downloadCompact() {
+    const list = ayahList()
+    const AC = window.AudioContext || window.webkitAudioContext
+    if (!AC) {
+      window.alert('Compact MP3 needs a modern browser. Use the regular download instead.')
+      return
+    }
+    setDownloadName('')
+    setCompact(true)
+    setDownloading(true)
+    setProgress({ done: 0, total: surahMode(reciter) ? list.length + 1 : list.length })
+    let worker = null
+    let audio = null
+    try {
+      audio = new AC()
+      audio.resume().catch(() => {})
+      worker = new Worker(new URL('../lib/compactMp3.worker.js', import.meta.url), {
+        type: 'module',
+      })
+      const encoded = new Promise((resolve, reject) => {
+        worker.onmessage = (e) => {
+          const m = e.data
+          if (m.type === 'done') resolve(m.mp3)
+          else if (m.type === 'error') reject(new Error(m.message))
+        }
+        worker.onerror = (e) => reject(new Error(e.message || 'Compression failed'))
+      })
+      let started = false
+      const feed = (buf) => {
+        if (!started) {
+          worker.postMessage({ type: 'start', sampleRate: buf.sampleRate })
+          started = true
+        }
+        const pcm = bufferToMono(buf)
+        worker.postMessage({ type: 'pcm', pcm }, [pcm.buffer])
+      }
+      if (surahMode(reciter)) {
+        const res = await fetch(surahAudioUrl(reciter, surahNumber))
+        if (!res.ok) throw new Error(`Could not fetch surah ${surahNumber}`)
+        const data = await res.arrayBuffer()
+        const buf = await audio.decodeAudioData(data)
+        if (buf.length * buf.numberOfChannels * 4 > 700 * 1024 * 1024) {
+          throw new Error(
+            'This surah is too long to compact in the browser (it would use too much memory). Use the regular MP3 download instead.',
+          )
+        }
+        setProgress({ done: 1, total: list.length + 1 })
+        if (!karaokeRef.current) {
+          karaokeRef.current = await loadKaraoke(reciter).catch(() => null)
+        }
+        const karaoke = karaokeRef.current
+        const texts = surahTextsRef.current || (await fetchSurahTexts(surahNumber))
+        for (let i = 0; i < list.length; i++) {
+          const ayah = texts.ayahs[list[i] - 1]
+          const words = karaoke
+            ? ayahWords(karaoke.timings, karaoke.ml, surahNumber, list[i], ayah?.arabic)
+            : null
+          if (!words || typeof words.startMs !== 'number' || typeof words.endMs !== 'number') {
+            throw new Error(`No timing window for ${surahNumber}:${list[i]}`)
+          }
+          const s0 = Math.floor((words.startMs / 1000) * buf.sampleRate)
+          const s1 = Math.min(buf.length, Math.ceil((words.endMs / 1000) * buf.sampleRate))
+          const slice = audio.createBuffer(1, Math.max(0, s1 - s0), buf.sampleRate)
+          slice.copyToChannel(new Float32Array(buf.getChannelData(0).subarray(s0, s1)), 0)
+          feed(slice)
+          setProgress({ done: i + 2, total: list.length + 1 })
+        }
+      } else {
+        for (let i = 0; i < list.length; i++) {
+          const res = await fetch(ayahUrl(reciter, surahNumber, list[i]))
+          if (!res.ok) throw new Error(`Could not fetch ayah ${list[i]}`)
+          const buf = await audio.decodeAudioData(await res.arrayBuffer())
+          feed(buf)
+          setProgress({ done: i + 1, total: list.length })
+        }
+      }
+      worker.postMessage({ type: 'finish' })
+      const mp3 = await encoded
+      const blob = new Blob([mp3], { type: 'audio/mpeg' })
+      const name = `${(surah?.englishName || `Surah ${surahNumber}`).replace(/[^A-Za-z0-9-]+/g, '_')}_${clampedStart}-${clampedEnd}_${reciter}-compact.mp3`
+      setDownloadName(saveBlob(blob, name))
+    } catch (err) {
+      setDownloadName('')
+      window.alert(`Compact download failed: ${err.message}`)
+    } finally {
+      worker?.terminate()
+      audio?.close().catch(() => {})
+      setCompact(false)
       setDownloading(false)
     }
   }
@@ -1000,8 +1109,20 @@ useEffect(() => {
               >
                 <DownloadSimple className="h-4 w-4" weight="bold" />
                 {downloading
-                  ? `Fetching ${progress.done}/${progress.total}…`
+                  ? compact
+                    ? `Compressing ${progress.done}/${progress.total}…`
+                    : `Fetching ${progress.done}/${progress.total}…`
                   : 'Download MP3'}
+              </button>
+              <button
+                type="button"
+                onClick={downloadCompact}
+                disabled={busy}
+                title="Half the file size: re-encodes at 64 kbps mono. Takes longer than the regular download."
+                className="inline-flex h-12 items-center gap-2 rounded-full border border-line bg-surface px-5 text-sm font-medium text-ink transition-transform duration-500 ease-out hover:scale-105 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                <DownloadSimple className="h-4 w-4" weight="bold" />
+                {compact ? `Compressing ${progress.done}/${progress.total}…` : 'Compact MP3'}
               </button>
               <button
                 type="button"
@@ -1060,6 +1181,12 @@ useEffect(() => {
                     Rendering video — you can switch away; it encodes faster than real time.
                   </p>
                 )
+              ) : null}
+              {compact ? (
+                <p className="mt-2 text-sm text-ink-secondary">
+                  Compressing to 64 kbps mono — you can keep browsing; this runs in a
+                  background thread.
+                </p>
               ) : null}
             </div>
           ) : null}
