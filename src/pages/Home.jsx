@@ -8,6 +8,7 @@ import {
   Headphones,
   Heart,
   Lightning,
+  Monitor,
   Receipt,
 } from '@phosphor-icons/react'
 import { useAuth } from '../context/AuthContext'
@@ -531,6 +532,12 @@ export default function Home() {
               className="inline-flex h-13 items-center gap-2 rounded-full border border-gold/50 bg-white/5 px-8 font-display text-base font-semibold text-white backdrop-blur-sm transition-colors duration-300 hover:bg-gold hover:text-deep"
             >
               Listen to the Quran <Headphones className="h-4 w-4" weight="fill" />
+            </Link>
+            <Link
+              to="/tv"
+              className="inline-flex h-13 items-center gap-2 rounded-full border border-white/30 bg-white/10 px-8 font-display text-base font-semibold text-white backdrop-blur-sm transition-colors duration-300 hover:bg-white/20"
+            >
+              TV screensaver <Monitor className="h-4 w-4" weight="fill" />
             </Link>
           </div>
 
