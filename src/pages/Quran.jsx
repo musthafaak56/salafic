@@ -1259,7 +1259,7 @@ useEffect(() => {
             </p>
           ) : null}
 
-          {playing && currentAyah !== null ? (
+          {currentAyah !== null ? (
             <div className="mx-auto mt-6 w-full max-w-sm">
               <p className="mb-3 text-center text-xs font-semibold tracking-wider text-gold uppercase">
                 Live preview — exactly what your video will look like
