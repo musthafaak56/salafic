@@ -146,6 +146,9 @@ export default function Quran() {
   const [renderMode, setRenderMode] = useState(null)
   const [videoName, setVideoName] = useState('')
   const [previewUrl, setPreviewUrl] = useState('')
+  // The last generated media (MP3 or video) so the WhatsApp share button can
+  // attach the actual file instead of only a text link.
+  const [shareFile, setShareFile] = useState(null)
 
   const [fontPairId, setFontPairId] = useState(
     () => localStorage.getItem('salafic-font-pair') || FONT_PAIRS[0].id,
@@ -702,6 +705,7 @@ useEffect(() => {
         const blob = await res.blob()
         setProgress({ done: 1, total: 1 })
         const name = `${(surah?.englishName || `Surah ${surahNumber}`).replace(/[^A-Za-z0-9-]+/g, '_')}_${reciter}.mp3`
+        setShareFile({ blob, name, type: 'audio/mpeg' })
         setDownloadName(saveBlob(blob, name))
         return
       }
@@ -715,6 +719,7 @@ useEffect(() => {
       }
       const blob = new Blob(parts, { type: 'audio/mpeg' })
       const name = `${(surah?.englishName || `Surah ${surahNumber}`).replace(/[^A-Za-z0-9-]+/g, '_')}_${clampedStart}-${clampedEnd}_${reciter}.mp3`
+      setShareFile({ blob, name, type: 'audio/mpeg' })
       setDownloadName(saveBlob(blob, name))
     } catch (err) {
       setDownloadName('')
@@ -808,6 +813,7 @@ useEffect(() => {
       const mp3 = await encoded
       const blob = new Blob([mp3], { type: 'audio/mpeg' })
       const name = `${(surah?.englishName || `Surah ${surahNumber}`).replace(/[^A-Za-z0-9-]+/g, '_')}_${clampedStart}-${clampedEnd}_${reciter}-compact.mp3`
+      setShareFile({ blob, name, type: 'audio/mpeg' })
       setDownloadName(saveBlob(blob, name))
     } catch (err) {
       setDownloadName('')
@@ -822,6 +828,7 @@ useEffect(() => {
 
   async function downloadVideo() {
     setVideoName('')
+    setShareFile(null)
     setPreviewUrl((old) => {
       if (old) URL.revokeObjectURL(old)
       return ''
@@ -883,6 +890,7 @@ useEffect(() => {
         : await renderAyahVideo(args)
       const name = `${(texts.englishName || `Surah ${surahNumber}`).replace(/[^A-Za-z0-9-]+/g, '_')}_${clampedStart}-${clampedEnd}_${reciter}.${ext}`
       setVideoName(name)
+      setShareFile({ blob, name, type: `video/${ext}` })
       setPreviewUrl(URL.createObjectURL(blob))
     } catch (err) {
       setVideoName('')
@@ -916,6 +924,30 @@ useEffect(() => {
     document.body.appendChild(a)
     a.click()
     a.remove()
+  }
+
+  // Shares the last downloaded MP3 or video file through the OS share sheet
+  // (WhatsApp is available on phones); falls back to a WhatsApp text link
+  // where file sharing isn't supported (desktop browsers).
+  function shareMedia() {
+    const text = `${surah ? `${surah.englishName} (${surahNumber})` : `Surah ${surahNumber}`} — Ayahs ${clampedStart}–${clampedEnd} · ${
+      RECITERS.find((r) => r.id === reciter)?.label ?? 'Quran audio'
+    }\nListen here: https://salafic.web.app/quran`
+    const link = () => window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank', 'noreferrer')
+    if (!shareFile) {
+      link()
+      return
+    }
+    const file = new File([shareFile.blob], shareFile.name, { type: shareFile.type })
+    if (!navigator.canShare || !navigator.canShare({ files: [file] })) {
+      link()
+      return
+    }
+    navigator
+      .share({ files: [file], title: 'Quran recitation', text })
+      .catch((err) => {
+        if (err?.name !== 'AbortError') link()
+      })
   }
 
   const busy = downloading || video !== 'idle'
@@ -1139,19 +1171,21 @@ useEffect(() => {
                       : 'Rendering…'
                     : 'Download Video'}
               </button>
-              <a
-                href={`https://wa.me/?text=${encodeURIComponent(
-                  `${surah ? `${surah.englishName} (${surahNumber})` : `Surah ${surahNumber}`} — Ayahs ${clampedStart}–${clampedEnd} · ${
-                    RECITERS.find((r) => r.id === reciter)?.label ?? 'Quran audio'
-                  }\nListen here: https://salafic.web.app/quran`,
-                )}`}
-                target="_blank"
-                rel="noreferrer"
+              <button
+                type="button"
+                onClick={shareMedia}
+                title={shareFile ? `Share ${shareFile.name}` : 'Share a WhatsApp link'}
                 className="inline-flex h-12 items-center gap-2 rounded-full border border-line bg-surface px-6 font-display text-sm font-bold text-ink transition-transform duration-500 ease-out hover:scale-105"
               >
                 <WhatsappLogo className="h-4 w-4" weight="fill" />
                 Share
-              </a>
+              </button>
+              {shareFile ? (
+                <p className="w-full text-center text-xs text-ink-secondary sm:text-left">
+                  Share sends the {shareFile.name.replace(/\.[^.]+$/, '')} file itself on
+                  phones; on desktop it opens a WhatsApp text link.
+                </p>
+              ) : null}
             </div>
           ) : null}
 
@@ -1227,6 +1261,7 @@ useEffect(() => {
                   type="button"
                   onClick={() => {
                     setVideoName('')
+                    setShareFile(null)
                     setPreviewUrl((old) => {
                       if (old) URL.revokeObjectURL(old)
                       return ''
