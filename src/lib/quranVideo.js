@@ -548,6 +548,7 @@ export async function renderAyahVideo({ surahNumber, surahLabel, ayahs, reciter,
     let play = null
     let surahBuf = null
     let perAyahBufs = null
+    let windows = null
     let t = audio.currentTime + 0.3
 
     const dest = audio.createMediaStreamDestination()
@@ -557,7 +558,7 @@ export async function renderAyahVideo({ surahNumber, surahLabel, ayahs, reciter,
 
     if (surahAud) {
       // Whole-surah audio: no decode; play each ayah window via an <audio> element.
-      const windows = ayahs.map((ayah) => {
+      windows = ayahs.map((ayah) => {
         const w = karaoke
           ? ayahWords(karaoke.timings, karaoke.ml, surahNumber, ayah.number, ayah.arabic)
           : null
@@ -571,6 +572,7 @@ export async function renderAyahVideo({ surahNumber, surahLabel, ayahs, reciter,
 
       const el = new Audio()
       el.preload = 'auto'
+      el.crossOrigin = 'anonymous'
       el.src = surahAudioUrl(reciter, surahNumber)
       await new Promise((resolve, reject) => {
         const ok = () => {
@@ -794,7 +796,8 @@ export function hasOfflineSupport() {
 }
 
 async function pickVideoCodec(width, height) {
-  for (const codec of VIDEO_CODECS) {
+  const candidates = VIDEO_CODECS.filter((c) => c === 'avc' || c === 'hevc')
+  for (const codec of candidates) {
     try {
       const res = await VideoEncoder.isConfigSupported({
         codec,
@@ -802,6 +805,7 @@ async function pickVideoCodec(width, height) {
         height,
         bitrate: VIDEO_BITRATE,
         framerate: OFFLINE_FPS,
+        ...(codec === 'avc' ? { avc: { format: 'avc' } } : {}),
       })
       if (res.supported) return codec
     } catch {}
@@ -1001,7 +1005,7 @@ export async function renderAyahVideoOffline({
     format: new Mp4OutputFormat({ fastStart: 'in-memory' }),
     target: new BufferTarget(),
   })
-  const videoSource = new EncodedVideoPacketSource('avc')
+  const videoSource = new EncodedVideoPacketSource(videoCodec)
   output.addVideoTrack(videoSource, { frameRate: OFFLINE_FPS })
   const audioSource = new EncodedAudioPacketSource('aac')
   output.addAudioTrack(audioSource)
