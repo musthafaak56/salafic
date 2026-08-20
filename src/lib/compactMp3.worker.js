@@ -12,7 +12,16 @@ self.onmessage = (e) => {
       enc = new Mp3Encoder(1, msg.sampleRate, 64)
       parts.length = 0
     } else if (msg.type === 'pcm') {
-      const out = enc.encodeBuffer(msg.pcm)
+      // lamejs expects Int16 PCM; the decoder gives us Float32 in [-1, 1].
+      // Without this conversion the pulses are near zero and the MP3 comes
+      // out silent (with perfectly normal file size and duration).
+      const f = msg.pcm
+      const s = new Int16Array(f.length)
+      for (let i = 0; i < f.length; i++) {
+        const v = f[i]
+        s[i] = v < -1 ? -32768 : v > 1 ? 32767 : Math.round(v * 32767)
+      }
+      const out = enc.encodeBuffer(s)
       if (out.length) parts.push(out)
     } else if (msg.type === 'finish') {
       const tail = enc.flush()
