@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   ArrowClockwise,
+  Check,
+  Copy,
   DownloadSimple,
   Minus,
   Pause,
@@ -19,6 +21,7 @@ import {
   surahMode,
   fetchSurahs,
   fetchSurahTexts,
+  formatAyahCopyText,
 } from '../lib/quran'
 import {
   renderAyahVideo,
@@ -180,6 +183,8 @@ export default function Quran() {
   // The last generated media (MP3 or video) so the WhatsApp share button can
   // attach the actual file instead of only a text link.
   const [shareFile, setShareFile] = useState(null)
+  const [copying, setCopying] = useState(false)
+  const [copied, setCopied] = useState(false)
 
   const [fontPairId, setFontPairId] = useState(
     () => localStorage.getItem('salafic-font-pair') || FONT_PAIRS[0].id,
@@ -990,6 +995,35 @@ useEffect(() => {
       })
   }
 
+  async function copyAyahText() {
+    if (copying) return
+    setCopying(true)
+    try {
+      const texts = surahTextsRef.current || (await fetchSurahTexts(surahNumber))
+      if (!texts?.ayahs) return
+      const ayahs = texts.ayahs.slice(clampedStart - 1, clampedEnd)
+      const text = formatAyahCopyText(surahNumber, ayahs)
+      if (navigator?.clipboard?.writeText) {
+        await navigator.clipboard.writeText(text)
+      } else {
+        const textarea = document.createElement('textarea')
+        textarea.value = text
+        textarea.style.position = 'fixed'
+        textarea.style.opacity = '0'
+        document.body.appendChild(textarea)
+        textarea.select()
+        document.execCommand('copy')
+        document.body.removeChild(textarea)
+      }
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2500)
+    } catch (err) {
+      console.error('Failed to copy ayah text:', err)
+    } finally {
+      setCopying(false)
+    }
+  }
+
   const busy = downloading || video !== 'idle'
 
   return (
@@ -1210,6 +1244,24 @@ useEffect(() => {
                       ? 'Recording…'
                       : 'Rendering…'
                     : 'Create Video'}
+              </button>
+              <button
+                type="button"
+                onClick={copyAyahText}
+                disabled={busy || copying}
+                title="Copy Arabic text and Malayalam translation to clipboard"
+                className={`inline-flex h-12 items-center gap-2 rounded-full border px-5 font-display text-sm font-bold transition-transform duration-500 ease-out hover:scale-105 disabled:cursor-not-allowed disabled:opacity-50 ${
+                  copied
+                    ? 'border-emerald-500 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
+                    : 'border-line bg-surface text-ink hover:bg-surface-subtle'
+                }`}
+              >
+                {copied ? (
+                  <Check className="h-4 w-4 text-emerald-500" weight="bold" />
+                ) : (
+                  <Copy className="h-4 w-4" weight="bold" />
+                )}
+                {copied ? 'Copied!' : copying ? 'Copying…' : 'Copy Text'}
               </button>
               <button
                 type="button"
