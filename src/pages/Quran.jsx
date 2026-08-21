@@ -93,16 +93,45 @@ function AyahStep({ label, value, onChange, min, max, dec, inc }) {
 }
 
 // Triggers a browser download for a blob with the given file name.
-function saveBlob(blob, name) {
+function triggerBlobDownload(blob, name) {
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
   a.href = url
   a.download = name
+  a.rel = 'noopener'
   document.body.appendChild(a)
   a.click()
   a.remove()
   setTimeout(() => URL.revokeObjectURL(url), 10000)
+}
+
+function saveBlob(blob, name) {
+  triggerBlobDownload(blob, name)
   return name
+}
+
+// iOS and Android do not consistently honour an anchor's `download`
+// attribute for generated videos. Use the system share sheet there so the
+// user receives a properly named file; desktop browsers keep the direct save.
+async function deliverVideo(blob, name) {
+  const isMobile = /iPhone|iPad|iPod|Android|Mobile/i.test(navigator.userAgent)
+  const file = new File([blob], name, { type: blob.type || 'video/mp4' })
+
+  if (isMobile && navigator.share && navigator.canShare) {
+    try {
+      if (navigator.canShare({ files: [file] })) {
+        await navigator.share({ files: [file], title: name })
+        return 'shared'
+      }
+    } catch (err) {
+      // Closing the native share sheet is intentional: leave the rendered
+      // video ready so the user can try Save video again.
+      if (err?.name === 'AbortError') return 'cancelled'
+    }
+  }
+
+  triggerBlobDownload(blob, name)
+  return 'downloaded'
 }
 
 // Extracts a mono Float32Array from an AudioBuffer, downmixing a stereo buffer
@@ -146,6 +175,8 @@ export default function Quran() {
   const [renderMode, setRenderMode] = useState(null)
   const [videoName, setVideoName] = useState('')
   const [previewUrl, setPreviewUrl] = useState('')
+  const [savingVideo, setSavingVideo] = useState(false)
+  const [videoDelivery, setVideoDelivery] = useState('')
   // The last generated media (MP3 or video) so the WhatsApp share button can
   // attach the actual file instead of only a text link.
   const [shareFile, setShareFile] = useState(null)
@@ -828,6 +859,7 @@ useEffect(() => {
 
   async function downloadVideo() {
     setVideoName('')
+    setVideoDelivery('')
     setShareFile(null)
     setPreviewUrl((old) => {
       if (old) URL.revokeObjectURL(old)
@@ -916,14 +948,22 @@ useEffect(() => {
     }
   }
 
-  function saveVideo() {
-    if (!previewUrl || !videoName) return
-    const a = document.createElement('a')
-    a.href = previewUrl
-    a.download = videoName
-    document.body.appendChild(a)
-    a.click()
-    a.remove()
+  async function saveVideo() {
+    if (!shareFile?.blob || !videoName || savingVideo) return
+    setSavingVideo(true)
+    setVideoDelivery('')
+    try {
+      const delivery = await deliverVideo(shareFile.blob, videoName)
+      if (delivery === 'shared') {
+        setVideoDelivery('Choose “Save to Files” in the share sheet to keep your video.')
+      } else if (delivery === 'downloaded') {
+        setVideoDelivery(`Downloading ${videoName}.`)
+      }
+    } catch (err) {
+      window.alert(`Could not save the video: ${err?.message || 'Please try again.'}`)
+    } finally {
+      setSavingVideo(false)
+    }
   }
 
   // Shares the last downloaded MP3 or video file through the OS share sheet
@@ -1169,7 +1209,7 @@ useEffect(() => {
                     ? renderMode === 'record'
                       ? 'Recording…'
                       : 'Rendering…'
-                    : 'Download Video'}
+                    : 'Create Video'}
               </button>
               <button
                 type="button"
@@ -1236,7 +1276,7 @@ useEffect(() => {
           {videoName && previewUrl ? (
             <div className="mt-8">
               <p className="text-xs font-semibold tracking-wider text-gold uppercase">
-                Video ready — preview it, then download
+                Video ready — preview it, then save it
               </p>
               <div className="mx-auto mt-4 w-full max-w-sm">
                 <video
@@ -1251,16 +1291,18 @@ useEffect(() => {
                 <button
                   type="button"
                   onClick={saveVideo}
+                  disabled={savingVideo}
                   className="inline-flex h-12 items-center gap-2 rounded-full bg-gold px-6 font-display text-sm font-bold text-deep transition-transform duration-500 ease-out hover:scale-105"
                 >
                   <DownloadSimple className="h-4 w-4" weight="bold" />
-                  Download {videoName.replace(/\.[^.]+$/, '')} ({range} ayah
+                  {savingVideo ? 'Saving video…' : 'Save video'} {videoName.replace(/\.[^.]+$/, '')} ({range} ayah
                   {range === 1 ? '' : 's'})
                 </button>
                 <button
                   type="button"
                   onClick={() => {
                     setVideoName('')
+                    setVideoDelivery('')
                     setShareFile(null)
                     setPreviewUrl((old) => {
                       if (old) URL.revokeObjectURL(old)
@@ -1273,6 +1315,9 @@ useEffect(() => {
                   Record again
                 </button>
               </div>
+              {videoDelivery ? (
+                <p className="mt-3 text-center text-sm text-ink-secondary">{videoDelivery}</p>
+              ) : null}
             </div>
           ) : null}
 
