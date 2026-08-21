@@ -9,7 +9,6 @@ import {
   EncodedVideoPacketSource,
   EncodedAudioPacketSource,
   EncodedPacket,
-  VIDEO_CODECS,
 } from 'mediabunny'
 
 export const W = 720
@@ -481,20 +480,22 @@ function makeAacAsc(sampleRate, channels) {
   return Uint8Array.of((2 << 3) | (index >> 1), ((index & 1) << 7) | (channels << 3))
 }
 
-// Returns a sanitised copy of the encoder output metadata for muxing, with
-// the AAC description and audio parameters replaced by the known-good values.
+// Returns a sanitised copy of the encoder output metadata for muxing. WebKit
+// sometimes supplies a malformed AAC description, so always use the exact
+// AudioSpecificConfig for the audio stream we configured instead of trusting
+// browser-provided metadata.
 function sanitizeAudioMeta(meta, sampleRate, channels) {
-  if (!meta?.decoderConfig) return meta
-  const dc = meta.decoderConfig
-  const bad =
-    !dc.description ||
-    dc.description.byteLength < 2 ||
-    (dc.description[0] >> 3) === 0 ||
-    !dc.numberOfChannels ||
-    !dc.sampleRate
-  if (!bad) return meta
-  const copy = { ...meta, decoderConfig: { ...dc, description: makeAacAsc(sampleRate, channels), sampleRate, numberOfChannels: channels } }
-  return copy
+  const dc = meta?.decoderConfig || {}
+  return {
+    ...(meta || {}),
+    decoderConfig: {
+      ...dc,
+      codec: 'mp4a.40.2',
+      description: makeAacAsc(sampleRate, channels),
+      sampleRate,
+      numberOfChannels: channels,
+    },
+  }
 }
 
 async function ensureAudioRunning(audio) {
@@ -772,6 +773,10 @@ export async function renderAyahVideo({ surahNumber, surahLabel, ayahs, reciter,
 const OFFLINE_FPS = 25
 const VIDEO_BITRATE = 5_500_000
 const AUDIO_BITRATE = 128_000
+// Explicit AVC profiles used by the working 18 August encoder. WebCodecs
+// expects a concrete codec string; generic codec names can generate tracks
+// that are accepted by the muxer but fail to decode on playback.
+const VIDEO_CODECS = ['avc1.640028', 'avc1.4d401e', 'avc1.42e01e', 'avc1.42001f']
 
 // Renders a slideshow offline; the steps below are checkpointed to
 // sessionStorage, which survives the page reload Safari performs when the tab
@@ -796,8 +801,7 @@ export function hasOfflineSupport() {
 }
 
 async function pickVideoCodec(width, height) {
-  const candidates = VIDEO_CODECS.filter((c) => c === 'avc' || c === 'hevc')
-  for (const codec of candidates) {
+  for (const codec of VIDEO_CODECS) {
     try {
       const res = await VideoEncoder.isConfigSupported({
         codec,
@@ -805,7 +809,6 @@ async function pickVideoCodec(width, height) {
         height,
         bitrate: VIDEO_BITRATE,
         framerate: OFFLINE_FPS,
-        ...(codec === 'avc' ? { avc: { format: 'avc' } } : {}),
       })
       if (res.supported) return codec
     } catch {}
@@ -872,6 +875,34 @@ export function timelinePeaks(windows, totalDur, barCount = 96) {
     for (let i = 0; i < barCount; i++) peaks[i] = Math.pow(peaks[i] / top, 0.55)
   }
   return peaks
+}
+
+// Copies every selected ayah window that intersects this encoder block. The
+// source offset is deliberately based on each window's `start`, which keeps
+// whole-surah reciters anchored to the requested first ayah rather than the
+// beginning of the surah. A block can span an ayah boundary, so it must not be
+// filled from only the window active at its first sample.
+function fillAudioBlock(target, blockStart, frames, windows, sampleRate, channels) {
+  const blockEnd = blockStart + frames
+  for (const window of windows) {
+    const timelineStart = Math.round(window.audioAt * sampleRate)
+    const timelineEnd = timelineStart + Math.round(window.dur * sampleRate)
+    const copyStart = Math.max(blockStart, timelineStart)
+    const copyEnd = Math.min(blockEnd, timelineEnd)
+    if (copyEnd <= copyStart) continue
+
+    const sourceStart = Math.round(window.start * sampleRate) + (copyStart - timelineStart)
+    const available = Math.max(0, Math.min(copyEnd - copyStart, window.buffer.length - sourceStart))
+    if (!available) continue
+
+    const targetStart = copyStart - blockStart
+    for (let channel = 0; channel < channels; channel++) {
+      const source = window.buffer.getChannelData(channel)
+      for (let frame = 0; frame < available; frame++) {
+        target[(targetStart + frame) * channels + channel] = source[sourceStart + frame]
+      }
+    }
+  }
 }
 
 // Renders the ayah slideshow offline with WebCodecs: each slide is drawn at a
@@ -1005,7 +1036,7 @@ export async function renderAyahVideoOffline({
     format: new Mp4OutputFormat({ fastStart: 'in-memory' }),
     target: new BufferTarget(),
   })
-  const videoSource = new EncodedVideoPacketSource(videoCodec)
+  const videoSource = new EncodedVideoPacketSource('avc')
   output.addVideoTrack(videoSource, { frameRate: OFFLINE_FPS })
   const audioSource = new EncodedAudioPacketSource('aac')
   output.addAudioTrack(audioSource)
@@ -1019,7 +1050,7 @@ export async function renderAyahVideoOffline({
   let encError = null
   const pending = []
   const drain = async () => {
-    if (pending.length) await Promise.allSettled(pending.splice(0))
+    if (pending.length) await Promise.all(pending.splice(0))
   }
 
   const videoEncoder = new VideoEncoder({
@@ -1063,18 +1094,7 @@ export async function renderAyahVideoOffline({
       if (encError) throw new Error('encode-error')
       const n = Math.min(audioChunk, totalSamples - pos)
       const data = new Float32Array(n * channels)
-      const sec = pos / sampleRate
-      const d = decoded.find((w) => sec >= w.audioAt && sec < w.audioAt + w.dur)
-      if (d) {
-        const startOff = Math.round(d.start * sampleRate)
-        const local = Math.round((sec - d.audioAt) * sampleRate) + startOff
-        const winRemain = Math.round(d.dur * sampleRate) - (local - startOff)
-        const avail = Math.max(0, Math.min(n, winRemain, d.buffer.length - local))
-        for (let c = 0; c < channels; c++) {
-          const src = d.buffer.getChannelData(c)
-          for (let j = 0; j < avail; j++) data[j * channels + c] = src[local + j]
-        }
-      }
+      fillAudioBlock(data, pos, n, decoded, sampleRate, channels)
       const audioData = new AudioData({
         format: 'f32',
         sampleRate,
@@ -1087,7 +1107,12 @@ export async function renderAyahVideoOffline({
       audioData.close()
       if (audioEncoder.encodeQueueSize > 4) await drain()
     }
+    // Some encoders (notably WebKit's AAC encoder) emit packets only when
+    // flushed. Complete those writes before releasing decoded audio or moving
+    // on to video frames, otherwise the MP4 can finalize without a sound track.
+    await audioEncoder.flush()
     await drain()
+    if (encError) throw new Error('encode-error')
     debugStep('audio-encoded')
     // Real waveform of the whole timeline, computed while the decoded windows
     // are still in memory, then the buffers are released before frames start.
@@ -1150,10 +1175,9 @@ export async function renderAyahVideoOffline({
         debugStep('frames', `${i + 1}/${frameCount}`)
       }
     }
-    await drain()
-
     await videoEncoder.flush()
-    await audioEncoder.flush()
+    await drain()
+    if (encError) throw new Error('encode-error')
     videoSource.close()
     audioSource.close()
     debugStep('flushed')
