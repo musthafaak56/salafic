@@ -41,11 +41,9 @@ service cloud.firestore {
         allow create, update, delete: if isAdminOf(masjidId);
       }
 
-      // Funds and expenses are publicly readable for transparency
-      // and written only by admins of that masjid.
+      // Funds (donations) are private to masjid admins and superadmins.
       match /funds/{entryId} {
-        allow read: if true;
-        allow create, update, delete: if isAdminOf(masjidId);
+        allow read, write: if isAdminOf(masjidId);
       }
 
       match /expenses/{entryId} {

@@ -4,7 +4,6 @@ import {
   ArrowRight,
   ArrowUpRight,
   Compass,
-  HandCoins,
   Headphones,
   Heart,
   Lightning,
@@ -14,8 +13,6 @@ import {
 import { useAuth } from '../context/AuthContext'
 import {
   getLatestPrayerTimes,
-  getFunds,
-  getAllFunds,
   getExpenses,
   getAllExpenses,
   getEvents,
@@ -50,9 +47,8 @@ import MonthView from '../components/MonthView'
 
 function useHomeData() {
   const [prayerTimes, setPrayerTimes] = useState(null)
-  const [recentFunds, setRecentFunds] = useState([])
   const [recentExpenses, setRecentExpenses] = useState([])
-  const [totals, setTotals] = useState({ collected: 0, spent: 0 })
+  const [totalSpent, setTotalSpent] = useState(0)
   const [upcomingEvents, setUpcomingEvents] = useState([])
   const [allEvents, setAllEvents] = useState([])
   const [openForms, setOpenForms] = useState([])
@@ -62,23 +58,17 @@ function useHomeData() {
   useEffect(() => {
     async function load() {
       try {
-        const [times, recentF, recentE, allF, allE, allEvents, forms] =
+        const [times, recentE, allE, allEvents, forms] =
           await Promise.all([
             getLatestPrayerTimes(),
-            getFunds(),
             getExpenses(),
-            getAllFunds(),
             getAllExpenses(),
             getEvents(),
             getForms(),
           ])
         setPrayerTimes(times)
-        setRecentFunds(recentF)
         setRecentExpenses(recentE)
-        setTotals({
-          collected: allF.reduce((s, f) => s + (Number(f.amount) || 0), 0),
-          spent: allE.reduce((s, e) => s + (Number(e.amount) || 0), 0),
-        })
+        setTotalSpent(allE.reduce((s, e) => s + (Number(e.amount) || 0), 0))
         const nowMs = Date.now()
         setUpcomingEvents(
           allEvents
@@ -103,9 +93,8 @@ function useHomeData() {
 
   return {
     prayerTimes,
-    recentFunds,
     recentExpenses,
-    totals,
+    totalSpent,
     events: allEvents,
     upcomingEvents,
     openForms,
@@ -431,12 +420,12 @@ function BentoPrayerTimes({ prayerTimes, next, loading }) {
   )
 }
 
-function ActivityList({ items, kind, loading }) {
+function ActivityList({ items, loading }) {
   if (loading) return <LoadingState rows={4} />
   if (items.length === 0) {
     return (
       <EmptyState
-        title={`No ${kind === 'funds' ? 'donations' : 'expenses'} recorded yet`}
+        title="No expenses recorded yet"
         description="The latest activity will appear here."
       />
     )
@@ -448,19 +437,14 @@ function ActivityList({ items, kind, loading }) {
           <div className="min-w-0">
             <p className="truncate text-sm font-medium text-ink">{item.note}</p>
             <p className="mt-0.5 text-xs text-ink-secondary">
-              {kind === 'expenses' && item.category ? `${item.category} · ` : ''}
+              {item.category ? `${item.category} · ` : ''}
               {formatDateTime(item.createdAt) === '—'
                 ? relativeDayLabel(item.date)
                 : formatDateTime(item.createdAt)}
             </p>
           </div>
-          <span
-            className={`shrink-0 text-sm font-semibold tabular-nums ${
-              kind === 'funds' ? 'text-positive' : 'text-negative'
-            }`}
-          >
-            {kind === 'funds' ? '+' : '−'}
-            {formatCurrency(item.amount)}
+          <span className="shrink-0 text-sm font-semibold tabular-nums text-negative">
+            −{formatCurrency(item.amount)}
           </span>
         </li>
       ))}
@@ -472,9 +456,8 @@ export default function Home() {
   const { profile } = useAuth()
   const {
     prayerTimes,
-    recentFunds,
     recentExpenses,
-    totals,
+    totalSpent,
     events,
     upcomingEvents,
     openForms,
@@ -511,7 +494,7 @@ export default function Home() {
             Cherukunnu Salafi Center
           </h1>
           <p className="mx-auto mt-6 max-w-xl text-lg leading-relaxed text-white/75">
-            Prayer times, community funds, and expenses — kept open and
+            Prayer times, community updates, and expenses — kept open and
             transparent for every neighbour.
           </p>
           <div className="mt-10 flex flex-col items-center justify-center gap-4 sm:flex-row">
@@ -522,10 +505,10 @@ export default function Home() {
               Today&apos;s times <ArrowUpRight className="h-4 w-4" weight="bold" />
             </a>
             <a
-              href="#community"
+              href="#expenses"
               className="inline-flex h-13 items-center gap-2 rounded-full border border-white/30 px-8 font-display text-base font-semibold text-white transition-colors duration-300 hover:bg-white/10"
             >
-              Community funds <ArrowRight className="h-4 w-4" />
+              Expenses <ArrowRight className="h-4 w-4" />
             </a>
             <Link
               to="/quran"
@@ -613,61 +596,17 @@ export default function Home() {
 
             <div className="col-span-6 overflow-hidden rounded-3xl border border-line bg-cream p-6 sm:col-span-3 lg:col-span-2">
               <p className="text-xs font-semibold tracking-wider text-ink-secondary uppercase">
-                Collected
-              </p>
-              <p className="mt-2 text-3xl font-bold tabular-nums tracking-tight text-positive">
-                {loading ? '…' : formatCurrency(totals.collected)}
-              </p>
-              <p className="mt-3 text-xs leading-relaxed text-ink-secondary">
-                All contributions received by the center.
-              </p>
-            </div>
-
-            <div className="col-span-6 overflow-hidden rounded-3xl border border-line bg-cream p-6 sm:col-span-3 lg:col-span-2">
-              <p className="text-xs font-semibold tracking-wider text-ink-secondary uppercase">
                 Spent
               </p>
               <p className="mt-2 text-3xl font-bold tabular-nums tracking-tight text-negative">
-                {loading ? '…' : formatCurrency(totals.spent)}
+                {loading ? '…' : formatCurrency(totalSpent)}
               </p>
               <p className="mt-3 text-xs leading-relaxed text-ink-secondary">
                 Every expense, listed and visible.
               </p>
             </div>
 
-            <div id="community" className="col-span-6 overflow-hidden rounded-3xl border border-line bg-surface p-6 sm:col-span-3 lg:col-span-2">
-              <p className="text-xs font-semibold tracking-wider text-ink-secondary uppercase">
-                Current balance
-              </p>
-              <p className="mt-2 text-3xl font-bold tabular-nums tracking-tight text-ink">
-                {loading ? '…' : formatCurrency(totals.collected - totals.spent)}
-              </p>
-              <p className="mt-3 text-xs leading-relaxed text-ink-secondary">
-                Open books. No mystery money.
-              </p>
-            </div>
-
-            <div className="col-span-6 rounded-3xl border border-line bg-surface p-6 sm:col-span-3 lg:col-span-4">
-              <div className="mb-2 flex items-center gap-2">
-                <HandCoins className="h-5 w-5 text-positive" />
-                <h3 className="font-display text-lg font-bold text-ink">
-                  Recent donations
-                </h3>
-              </div>
-              <ActivityList items={recentFunds} kind="funds" loading={loading} />
-            </div>
-
-            <div className="col-span-6 rounded-3xl border border-line bg-surface p-6 sm:col-span-3 lg:col-span-4">
-              <div className="mb-2 flex items-center gap-2">
-                <Receipt className="h-5 w-5 text-negative" />
-                <h3 className="font-display text-lg font-bold text-ink">
-                  Recent expenses
-                </h3>
-              </div>
-              <ActivityList items={recentExpenses} kind="expenses" loading={loading} />
-            </div>
-
-            <div className="col-span-6 rounded-3xl border border-gold/40 bg-gold-soft p-6 lg:col-span-2">
+            <div className="col-span-6 rounded-3xl border border-gold/40 bg-gold-soft p-6 sm:col-span-3 lg:col-span-2">
               <Heart className="h-6 w-6 text-gold" weight="fill" />
               <p className="mt-4 font-display text-xl font-bold leading-snug text-ink">
                 Your contribution keeps the lights on for the whole street.
@@ -680,6 +619,16 @@ export default function Home() {
                   Sign in <ArrowRight className="h-4 w-4" />
                 </Link>
               ) : null}
+            </div>
+
+            <div id="expenses" className="col-span-6 rounded-3xl border border-line bg-surface p-6">
+              <div className="mb-2 flex items-center gap-2">
+                <Receipt className="h-5 w-5 text-negative" />
+                <h3 className="font-display text-lg font-bold text-ink">
+                  Recent expenses
+                </h3>
+              </div>
+              <ActivityList items={recentExpenses} loading={loading} />
             </div>
           </div>
         </div>
