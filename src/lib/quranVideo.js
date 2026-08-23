@@ -448,19 +448,13 @@ export function drawSlide(ctx, { surahLabel, surahNumber, ayah, index, total, wo
 
   ornament(ctx, W / 2, 1640 * S, 210 * S)
 
-  ctx.font = `500 ${Math.round(19 * S)}px "Satoshi"`
-  try {
-    ctx.letterSpacing = `${6 * S}px`
-  } catch {}
-  ctx.fillStyle = 'rgba(194, 147, 60, 0.8)'
-  ctx.fillText('SALAFI CENTER CHERUKUNNU', W / 2, 1706 * S)
-
   if (reciterLabel) {
     try {
       ctx.letterSpacing = `${3 * S}px`
     } catch {}
-    ctx.font = `500 ${Math.round(17 * S)}px "Satoshi"`
-    ctx.fillText(reciterLabel.toUpperCase(), W / 2, 1750 * S)
+    ctx.font = `500 ${Math.round(18 * S)}px "Satoshi"`
+    ctx.fillStyle = 'rgba(194, 147, 60, 0.8)'
+    ctx.fillText(reciterLabel.toUpperCase(), W / 2, 1724 * S)
   }
 
   drawWaveform(ctx, waveform.peaks, waveform.fraction, S)
