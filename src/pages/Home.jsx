@@ -620,19 +620,7 @@ export default function Home() {
                 </Link>
               ) : null}
             </div>
-
-            <div id="expenses" className="col-span-6 rounded-3xl border border-line bg-surface p-6">
-              <div className="mb-2 flex items-center gap-2">
-                <Receipt className="h-5 w-5 text-negative" />
-                <h3 className="font-display text-lg font-bold text-ink">
-                  Recent expenses
-                </h3>
-              </div>
-              <ActivityList items={recentExpenses} loading={loading} />
-            </div>
-          </div>
-        </div>
-      </section>
+</section>
 
       {upcomingEvents.length > 0 ? (
         <section id="upcoming-events" className="relative py-24 sm:py-32">
