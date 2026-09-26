@@ -7,7 +7,7 @@ export default function AuthLayout({ title, subtitle, children, footer }) {
     <div className="flex min-h-screen flex-col bg-canvas text-ink">
       <header className="mx-auto flex w-full max-w-6xl items-center justify-between px-4 py-4">
         <Link to="/" className="font-display text-lg font-bold tracking-tight text-ink">
-          Salafi Center <span className="text-ink-secondary">Cherukunnu</span>
+          Salafic <span className="text-ink-secondary">Community, connected.</span>
         </Link>
         <ThemeToggle />
       </header>

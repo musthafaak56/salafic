@@ -34,3 +34,6 @@ dist-ssr
 .claude/
 skills-lock.json
 .firebase/
+.freebuff/
+tv-events-verified.png
+

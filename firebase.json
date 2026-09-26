@@ -30,6 +30,9 @@
     ]
   },
   "firestore": {
-    "rules": "firestore.rules"
-  }
+    "rules": "firestore.rules",
+    "indexes": "firestore.indexes.json"
+  },
+  "functions": [{ "source": "functions", "codebase": "platform", "runtime": "nodejs22" }],
+  "emulators": { "auth": { "port": 9099 }, "firestore": { "port": 8080 }, "functions": { "port": 5001 }, "singleProjectMode": true }
 }

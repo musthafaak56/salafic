@@ -1,3 +1,4 @@
+import { useCenter } from '../../context/CenterContext'
 import { useState } from 'react'
 import { addEvent, updateEvent } from '../../lib/firestore'
 import { useAuth } from '../../context/AuthContext'
@@ -7,6 +8,7 @@ import Field, { inputClass } from '../../components/Field'
 const today = () => new Date().toISOString().slice(0, 10)
 
 export default function EventForm({ onSaved, onCancel, initial }) {
+  const { centerId } = useCenter()
   const { profile } = useAuth()
   const editing = Boolean(initial?.id)
   const [title, setTitle] = useState(initial?.title ?? '')
@@ -43,9 +45,9 @@ export default function EventForm({ onSaved, onCancel, initial }) {
     }
     try {
       if (editing) {
-        await updateEvent('main', initial.id, data)
+        await updateEvent(centerId, initial.id, data)
       } else {
-        await addEvent('main', data)
+        await addEvent(centerId, data)
         setTitle('')
         setTitleMl('')
         setTime('')

@@ -1,3 +1,4 @@
+import { useCenter } from '../../context/CenterContext'
 import { useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { addForm, getForm, updateForm } from '../../lib/firestore'
@@ -25,6 +26,7 @@ function newId() {
 }
 
 export default function FormBuilder() {
+  const { centerId, base } = useCenter()
   const { formId } = useParams()
   const navigate = useNavigate()
   const editing = Boolean(formId) && formId !== 'new'
@@ -38,7 +40,7 @@ export default function FormBuilder() {
 
   useEffect(() => {
     if (!editing) return
-    getForm('main', formId)
+    getForm(centerId, formId)
       .then((form) => {
         if (!form) {
           setError('Form not found.')
@@ -51,7 +53,7 @@ export default function FormBuilder() {
         setOpen(form.open !== false)
       })
       .finally(() => setLoading(false))
-  }, [formId, editing])
+  }, [formId, editing, centerId])
 
   function updateField(fieldId, patch) {
     setFields((list) =>
@@ -118,11 +120,11 @@ export default function FormBuilder() {
     }
     try {
       if (editing) {
-        await updateForm('main', formId, data)
+        await updateForm(centerId, formId, data)
       } else {
-        await addForm('main', data)
+        await addForm(centerId, data)
       }
-      navigate('/admin/forms')
+      navigate(`${base}/admin/forms`)
     } catch (err) {
       setError(err.message)
     }
@@ -306,7 +308,7 @@ export default function FormBuilder() {
 
         <div className="flex items-center gap-3">
           <Button type="submit">{editing ? 'Save changes' : 'Create form'}</Button>
-          <Button variant="ghost" type="button" onClick={() => navigate('/admin/forms')}>
+          <Button variant="ghost" type="button" onClick={() => navigate(`${base}/admin/forms`)}>
             Cancel
           </Button>
         </div>

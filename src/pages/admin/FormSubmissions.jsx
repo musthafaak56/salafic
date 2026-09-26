@@ -1,3 +1,4 @@
+import { useCenter } from '../../context/CenterContext'
 import { useEffect, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { getForm, getSubmissions } from '../../lib/firestore'
@@ -9,6 +10,7 @@ import EmptyState from '../../components/EmptyState'
 import Button from '../../components/Button'
 
 export default function FormSubmissions() {
+  const { centerId, base } = useCenter()
   const { formId } = useParams()
   const navigate = useNavigate()
   const [form, setForm] = useState(null)
@@ -16,14 +18,14 @@ export default function FormSubmissions() {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    Promise.all([getForm('main', formId), getSubmissions('main', formId)])
+    Promise.all([getForm(centerId, formId), getSubmissions(centerId, formId)])
       .then(([f, s]) => {
         setForm(f)
         setSubmissions(s)
       })
       .catch(() => {})
       .finally(() => setLoading(false))
-  }, [formId])
+  }, [formId, centerId])
 
   if (loading) return <LoadingState rows={4} />
   if (!form)
@@ -49,11 +51,11 @@ export default function FormSubmissions() {
       </section>
 
       <div className="flex items-center gap-3">
-        <Button variant="outline" size="sm" onClick={() => navigate('/admin/forms')}>
+        <Button variant="outline" size="sm" onClick={() => navigate(`${base}/admin/forms`)}>
           ← All forms
         </Button>
         <Link
-          to={`/forms/${form.id}`}
+          to={`${base}/forms/${form.id}`}
           target="_blank"
           rel="noreferrer"
           className="rounded-lg border border-line bg-surface px-3 py-1.5 text-sm font-medium text-ink transition-colors hover:bg-surface-subtle"

@@ -6,9 +6,9 @@ import Button from '../components/Button'
 import { GoogleLogo } from '@phosphor-icons/react'
 
 const ROLE_PATHS = {
-  superadmin: '/superadmin',
-  admin: '/admin',
-  user: '/',
+  superadmin: '/platform',
+  admin: '/centers',
+  user: '/onboarding',
 }
 
 function googleErrorMessage(code) {

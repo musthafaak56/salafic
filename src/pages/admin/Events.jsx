@@ -1,3 +1,4 @@
+import { useCenter } from '../../context/CenterContext'
 import { useEffect, useState } from 'react'
 import { getEvents, deleteEvent } from '../../lib/firestore'
 import { formatTime } from '../../lib/utils'
@@ -23,6 +24,7 @@ function formatEventDate(eventAt) {
 }
 
 export default function Events() {
+  const { centerId } = useCenter()
   const [events, setEvents] = useState([])
   const [loading, setLoading] = useState(true)
   const [editing, setEditing] = useState(null)
@@ -30,7 +32,7 @@ export default function Events() {
   const [posterEvent, setPosterEvent] = useState(null)
 
   async function loadData() {
-    const list = await getEvents('main', 100)
+    const list = await getEvents(centerId, 100)
     setEvents(list)
     setLoading(false)
   }
@@ -43,7 +45,7 @@ export default function Events() {
     if (!window.confirm('Delete this event permanently?')) return
     setDeletingId(id)
     try {
-      await deleteEvent('main', id)
+      await deleteEvent(centerId, id)
       await loadData()
     } finally {
       setDeletingId(null)

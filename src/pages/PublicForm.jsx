@@ -1,3 +1,4 @@
+import { useCenter } from '../context/CenterContext'
 import { useEffect, useState } from 'react'
 import { useParams } from 'react-router-dom'
 import { getForm, addSubmission } from '../lib/firestore'
@@ -15,20 +16,22 @@ function inputForType(type) {
 }
 
 export default function PublicForm() {
+  const { centerId, base } = useCenter()
   const { formId } = useParams()
   const [form, setForm] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [answers, setAnswers] = useState({})
+  const [submissionId] = useState(() => crypto.randomUUID())
   const [saving, setSaving] = useState(false)
   const [done, setDone] = useState(false)
 
   useEffect(() => {
-    getForm('main', formId)
+    getForm(centerId, formId)
       .then(setForm)
       .catch(() => setForm(null))
       .finally(() => setLoading(false))
-  }, [formId])
+  }, [formId, centerId])
 
   function setAnswer(fieldId, value) {
     setAnswers((a) => ({ ...a, [fieldId]: value }))
@@ -39,9 +42,10 @@ export default function PublicForm() {
     setError('')
     setSaving(true)
     try {
-      await addSubmission('main', {
+      await addSubmission(centerId, {
         formId,
         answers,
+        submissionId,
       })
       setDone(true)
     } catch (err) {
@@ -85,7 +89,7 @@ export default function PublicForm() {
               Thank you, your response has been recorded.
             </p>
             <a
-              href="/"
+              href={base}
               className="mt-4 inline-flex h-11 items-center rounded-full bg-primary px-6 text-sm font-bold text-canvas hover:bg-primary-hover"
             >
               Back to home

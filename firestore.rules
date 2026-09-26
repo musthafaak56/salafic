@@ -1,74 +1,60 @@
 rules_version = '2';
-
+// Server-controlled center records. Public projections contain no private ledger fields.
+// users: uid/name/email/photoURL/createdAt. Roles live ONLY in platformRoles and members.
+// Operational writes go through validated callable functions; default deny everywhere else.
 service cloud.firestore {
   match /databases/{database}/documents {
-
-    function signedIn() {
-      return request.auth != null;
+    function signedIn() { return request.auth != null; }
+    function self(uid) { return signedIn() && request.auth.uid == uid; }
+    function superAdmin() {
+      return signedIn() && exists(/databases/$(database)/documents/platformRoles/$(request.auth.uid))
+        && get(/databases/$(database)/documents/platformRoles/$(request.auth.uid)).data.role == 'superadmin';
     }
-
-    function userDoc() {
-      return get(/databases/$(database)/documents/users/$(request.auth.uid));
+    function memberRole(id) { return get(/databases/$(database)/documents/masjids/$(id)/members/$(request.auth.uid)).data.role; }
+    function member(id) {
+      return signedIn() && exists(/databases/$(database)/documents/masjids/$(id))
+        && exists(/databases/$(database)/documents/masjids/$(id)/members/$(request.auth.uid));
     }
-
-    function isSuperAdmin() {
-      return signedIn() && userDoc().data.role == 'superadmin';
+    function staff(id) { return superAdmin() || member(id); }
+    function finance(id) { return superAdmin() || (member(id) && memberRole(id) in ['owner','admin','finance']); }
+    function editor(id) { return superAdmin() || (member(id) && memberRole(id) in ['owner','admin','editor']); }
+    function owner(id) { return superAdmin() || (member(id) && memberRole(id) == 'owner'); }
+    function published(id) { return get(/databases/$(database)/documents/masjids/$(id)).data.status == 'published'; }
+    function isValidUser(d, uid) {
+      return d.keys().hasOnly(['uid','name','email','photoURL','createdAt'])
+        && d.keys().hasAll(['uid','name','email','createdAt'])
+        && d.uid == uid && d.name is string && d.name.size() <= 120
+        && d.email == request.auth.token.email && d.email.size() <= 254
+        && d.createdAt is timestamp
+        && (!('photoURL' in d) || (d.photoURL is string && d.photoURL.size() <= 2000));
     }
-
-    function isAdminOf(masjidId) {
-      return signedIn() && (
-        userDoc().data.role == 'superadmin' ||
-        (userDoc().data.role == 'admin' && userDoc().data.masjidIds.hasAny([masjidId]))
-      );
-    }
-
-    function isOwner(uid) {
-      return signedIn() && request.auth.uid == uid;
-    }
-
     match /users/{uid} {
-      allow read, write: if isOwner(uid) || isSuperAdmin();
+      allow read: if self(uid);
+      allow create: if self(uid) && isValidUser(request.resource.data, uid) && request.resource.data.createdAt == request.time;
+      allow update: if self(uid) && isValidUser(request.resource.data, uid)
+        && request.resource.data.createdAt == resource.data.createdAt;
     }
-
-    match /masjids/{masjidId} {
-      // Public info about a masjid is readable by everyone.
-      allow read: if true;
-      allow create, update, delete: if isSuperAdmin();
-
-      // Prayer times are public (homepage) and maintained by admins.
-      match /prayerTimes/{date} {
-        allow read: if true;
-        allow create, update, delete: if isAdminOf(masjidId);
-      }
-
-      // Funds (donations) are private to masjid admins and superadmins.
-      match /funds/{entryId} {
-        allow read, write: if isAdminOf(masjidId);
-      }
-
-      match /expenses/{entryId} {
-        allow read: if true;
-        allow create, update, delete: if isAdminOf(masjidId);
-      }
-
-      // Events are publicly readable and managed by admins.
-      match /events/{eventId} {
-        allow read: if true;
-        allow create, update, delete: if isAdminOf(masjidId);
-      }
-
-      // Forms are publicly readable so the public can fill them in;
-      // only admins may create, edit or delete them.
-      match /forms/{formId} {
-        allow read: if true;
-        allow create, update, delete: if isAdminOf(masjidId);
-      }
-
-      // Anyone can submit a form; only admins may read submissions.
-      match /formSubmissions/{submissionId} {
-        allow create: if true;
-        allow read, update, delete: if isAdminOf(masjidId);
-      }
+    match /platformRoles/{uid} { allow read: if self(uid); }
+    match /userCenters/{uid}/centers/{id} { allow read: if self(uid); }
+    match /centerSlugs/{slug} { allow read: if true; }
+    match /centerApplications/{id} { allow read: if superAdmin() || (signedIn() && resource.data.submitterUid == request.auth.uid); }
+    match /centerInvitations/{id} { allow read: if superAdmin(); }
+    match /masjids/{id} {
+      allow read: if resource.data.status == 'published' || staff(id);
+      match /members/{uid} { allow read: if self(uid) || owner(id); }
+      match /prayerTimes/{date} { allow read: if published(id) || editor(id); }
+      match /publicFinance/{doc} { allow read: if published(id) || finance(id); }
+      match /publicTransactions/{doc} { allow read: if published(id) || finance(id); }
+      match /announcements/{doc} { allow read: if published(id) || editor(id); }
+      match /events/{doc} { allow read: if published(id) || editor(id); }
+      match /forms/{doc} { allow read: if published(id) || editor(id); }
+      match /funds/{doc} { allow read: if finance(id); }
+      match /expenses/{doc} { allow read: if finance(id); }
+      match /financeState/{doc} { allow read: if finance(id); }
+      match /formSubmissions/{doc} { allow read: if editor(id); }
+      match /contentDrafts/{doc} { allow read: if (resource.data.kind == 'finance' && finance(id)) || (resource.data.kind != 'finance' && editor(id)); }
+      match /contentRevisions/{doc} { allow read: if staff(id); }
+      match /auditLogs/{doc} { allow read: if owner(id); }
     }
   }
 }

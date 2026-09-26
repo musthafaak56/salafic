@@ -7,6 +7,10 @@ import {
 } from 'firebase/auth'
 import { getFirestore } from 'firebase/firestore'
 import { getStorage } from 'firebase/storage'
+import { getFunctions, connectFunctionsEmulator } from 'firebase/functions'
+import { connectFirestoreEmulator } from 'firebase/firestore'
+import { connectAuthEmulator } from 'firebase/auth'
+import { initializeAppCheck, ReCaptchaV3Provider } from 'firebase/app-check'
 
 const firebaseConfig = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
@@ -18,10 +22,19 @@ const firebaseConfig = {
 }
 
 const app = initializeApp(firebaseConfig)
+if (import.meta.env.VITE_RECAPTCHA_SITE_KEY) {
+  initializeAppCheck(app, { provider: new ReCaptchaV3Provider(import.meta.env.VITE_RECAPTCHA_SITE_KEY), isTokenAutoRefreshEnabled: true })
+}
 
 export const auth = getAuth(app)
 export const db = getFirestore(app)
 export const storage = getStorage(app)
+export const functions = getFunctions(app)
+if (import.meta.env.VITE_USE_EMULATORS === 'true') {
+  connectAuthEmulator(auth, 'http://127.0.0.1:9099')
+  connectFirestoreEmulator(db, '127.0.0.1', 8080)
+  connectFunctionsEmulator(functions, '127.0.0.1', 5001)
+}
 export const googleProvider = new GoogleAuthProvider()
 
 setPersistence(auth, browserLocalPersistence)

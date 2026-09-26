@@ -1,13 +1,13 @@
 import { useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, useNavigate, useLocation } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import AuthLayout from '../components/AuthLayout'
 import Button from '../components/Button'
 import { GoogleLogo } from '@phosphor-icons/react'
 
 const ROLE_PATHS = {
-  superadmin: '/superadmin',
-  admin: '/admin',
+  superadmin: '/platform',
+  admin: '/centers',
   user: '/',
 }
 
@@ -30,6 +30,7 @@ function googleErrorMessage(code) {
 export default function Login() {
   const { loginWithGoogle } = useAuth()
   const navigate = useNavigate()
+  const location = useLocation()
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
 
@@ -38,7 +39,9 @@ export default function Login() {
     setBusy(true)
     try {
       const profileData = await loginWithGoogle()
-      navigate(ROLE_PATHS[profileData.role] || '/', { replace: true })
+      const requested = location.state?.from?.pathname
+      const destination = requested?.startsWith('/') && !requested.startsWith('//') ? requested : ROLE_PATHS[profileData.role] || '/'
+      navigate(destination, { replace: true })
     } catch (err) {
       const message = googleErrorMessage(err?.code)
       if (message) setError(message)

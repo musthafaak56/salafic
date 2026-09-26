@@ -3,6 +3,7 @@ import { useAuth } from '../context/AuthContext'
 import ThemeToggle from './ThemeToggle'
 import StatusBadge from './StatusBadge'
 import Button from './Button'
+import { useCenter } from '../context/CenterContext'
 
 const adminNav = (base) => [
   { to: `${base}`, label: 'Overview', end: true },
@@ -24,6 +25,7 @@ const menuIconProps = {
 export default function AppHeader({ area = 'public', onMenuClick, menuOpen }) {
   const { profile, logout } = useAuth()
   const navigate = useNavigate()
+  const context = useCenter()
 
   async function handleLogout() {
     await logout()
@@ -32,7 +34,7 @@ export default function AppHeader({ area = 'public', onMenuClick, menuOpen }) {
 
   const showAdmin = profile?.role === 'admin' || profile?.role === 'superadmin'
   const isAdminArea = area === 'admin'
-  const adminBase = profile?.role === 'superadmin' ? '/superadmin' : '/admin'
+  const adminBase = context ? `${context.base}/admin` : profile?.role === 'superadmin' ? '/platform' : '/centers'
 
   return (
     <header className="fixed inset-x-0 top-4 z-40 px-4">
@@ -71,8 +73,7 @@ export default function AppHeader({ area = 'public', onMenuClick, menuOpen }) {
               <circle cx="16.4" cy="7.6" r="1.1" fill="currentColor" />
             </svg>
           </span>
-          <span className="hidden sm:inline">Salafi Center</span>
-          <span className="hidden text-ink-secondary md:inline">Cherukunnu</span>
+          <span className="hidden sm:inline">{context?.center.displayName || 'Salafic'}</span>
         </Link>
 
         {!isAdminArea && showAdmin ? (
@@ -111,7 +112,7 @@ export default function AppHeader({ area = 'public', onMenuClick, menuOpen }) {
           </NavLink>
 
           <NavLink
-            to="/qhl-documents"
+            to="/centers"
             className={({ isActive }) =>
               `flex h-10 items-center rounded-xl px-3 text-sm font-medium transition-colors duration-200 ${
                 isActive
@@ -120,7 +121,7 @@ export default function AppHeader({ area = 'public', onMenuClick, menuOpen }) {
               }`
             }
           >
-            QHLS Docs
+            Find a center
           </NavLink>
         </nav>
 

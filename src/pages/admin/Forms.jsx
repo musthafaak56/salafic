@@ -1,3 +1,4 @@
+import { useCenter } from '../../context/CenterContext'
 import { useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { getForms, deleteForm } from '../../lib/firestore'
@@ -10,13 +11,14 @@ import Button from '../../components/Button'
 import StatusBadge from '../../components/StatusBadge'
 
 export default function Forms() {
+  const { centerId, base } = useCenter()
   const navigate = useNavigate()
   const [forms, setForms] = useState([])
   const [loading, setLoading] = useState(true)
   const [deletingId, setDeletingId] = useState(null)
 
   async function loadData() {
-    const list = await getForms('main')
+    const list = await getForms(centerId)
     setForms(list)
     setLoading(false)
   }
@@ -29,7 +31,7 @@ export default function Forms() {
     if (!window.confirm('Delete this form and keep its submissions?')) return
     setDeletingId(id)
     try {
-      await deleteForm('main', id)
+      await deleteForm(centerId, id)
       await loadData()
     } finally {
       setDeletingId(null)
@@ -85,7 +87,7 @@ export default function Forms() {
                   </div>
                   <div className="flex shrink-0 items-center gap-2">
                     <Link
-                      to={`/forms/${form.id}`}
+                      to={`${base}/forms/${form.id}`}
                       target="_blank"
                       rel="noreferrer"
                       className="rounded-lg border border-line bg-surface px-3 py-1.5 text-sm font-medium text-ink transition-colors hover:bg-surface-subtle"
@@ -95,14 +97,14 @@ export default function Forms() {
                     <Button
                       variant="outline"
                       size="sm"
-                      onClick={() => navigate(`/admin/forms/${form.id}/submissions`)}
+                      onClick={() => navigate(`${base}/admin/forms/${form.id}/submissions`)}
                     >
                       Submissions
                     </Button>
                     <Button
                       variant="outline"
                       size="sm"
-                      onClick={() => navigate(`/admin/forms/${form.id}/edit`)}
+                      onClick={() => navigate(`${base}/admin/forms/${form.id}/edit`)}
                     >
                       Edit
                     </Button>
