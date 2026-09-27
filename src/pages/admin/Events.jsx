@@ -1,30 +1,35 @@
 import { useCenter } from '../../context/CenterContext'
-import { useEffect, useState } from 'react'
+import { useEffect, useState, lazy, Suspense } from 'react'
 import { getEvents, deleteEvent } from '../../lib/firestore'
-import { formatTime } from '../../lib/utils'
+import { nextEvent } from '../../../functions/time'
 import Card from '../../components/Card'
 import SectionHeading from '../../components/SectionHeading'
 import LoadingState from '../../components/LoadingState'
 import EmptyState from '../../components/EmptyState'
 import Button from '../../components/Button'
-import PosterModal from '../../components/PosterModal'
+const PosterModal = lazy(() => import('../../components/PosterModal'))
 import EventForm from './EventForm'
 
-function formatEventDate(eventAt) {
+function formatEventDate(eventAt, center) {
   const d = new Date(eventAt)
   if (Number.isNaN(d.getTime())) return '—'
-  const date = d.toLocaleDateString('en-IN', {
+  const date = d.toLocaleDateString(center.locale, {
+    timeZone: center.timezone,
     weekday: 'short',
     day: 'numeric',
     month: 'short',
     year: 'numeric',
   })
-  const time = formatTime(eventAt)
+  const time = d.toLocaleTimeString(center.locale, {
+    timeZone: center.timezone,
+    hour: 'numeric',
+    minute: '2-digit',
+  })
   return time === '—' ? date : `${date} · ${time}`
 }
 
 export default function Events() {
-  const { centerId } = useCenter()
+  const { centerId, center } = useCenter()
   const [events, setEvents] = useState([])
   const [loading, setLoading] = useState(true)
   const [editing, setEditing] = useState(null)
@@ -55,10 +60,12 @@ export default function Events() {
   return (
     <div className="space-y-8">
       <section>
-        <h1 className="text-3xl font-semibold tracking-tight text-ink">Events</h1>
+        <h1 className="text-3xl font-semibold tracking-tight text-ink">
+          Events
+        </h1>
         <p className="mt-2 text-sm text-ink-secondary">
-          Create announcements for the community. Upcoming events
-          appear on the home page.
+          Create announcements for the community. Upcoming events appear on the
+          home page.
         </p>
       </section>
 
@@ -85,13 +92,16 @@ export default function Events() {
           ) : (
             <ul className="divide-y divide-line">
               {events.map((event) => (
-                <li key={event.id} className="flex items-start justify-between gap-4 py-3">
+                <li
+                  key={event.id}
+                  className="flex items-start justify-between gap-4 py-3"
+                >
                   <div className="min-w-0">
                     <p className="truncate text-sm font-medium text-ink">
                       {event.title}
                     </p>
                     <p className="mt-0.5 text-xs text-ink-secondary">
-                      {formatEventDate(event.eventAt)}
+                      {formatEventDate(nextEvent(event), center)}
                       {event.repeat === 'weekly' ? ' · Repeats every week' : ''}
                       {event.location ? ` · ${event.location}` : ''}
                     </p>
@@ -133,7 +143,12 @@ export default function Events() {
       </section>
 
       {posterEvent ? (
-        <PosterModal event={posterEvent} onClose={() => setPosterEvent(null)} />
+        <Suspense fallback={<p role="status">Loading poster…</p>}>
+          <PosterModal
+            event={posterEvent}
+            onClose={() => setPosterEvent(null)}
+          />
+        </Suspense>
       ) : null}
     </div>
   )

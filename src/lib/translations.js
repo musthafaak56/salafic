@@ -1,0 +1,142 @@
+// Keys fall back to English for unsupported languages and regional locales.
+const en = {
+  prayers: 'Prayer times',
+  prayer: 'Prayer',
+  adhan: 'Adhan',
+  iqamah: 'Iqamah',
+  next: 'Next prayer',
+  finances: 'Community finances',
+  collected: 'Donations',
+  spent: 'Expenses',
+  balance: 'Balance',
+  sunrise: 'Sunrise',
+  jumuah: 'Jumuah',
+  unavailable: "Today's schedule unavailable.",
+  preview: 'Preview',
+  announcements: 'Announcements',
+  urgent: 'Important notice',
+  unpublished: 'This center has not published a financial report yet.',
+  coverage: 'All recorded activity',
+  published: 'Published',
+  draft: 'Preview — not yet published',
+  fajr: 'Fajr',
+  dhuhr: 'Dhuhr',
+  asr: 'Asr',
+  maghrib: 'Maghrib',
+  isha: 'Isha',
+}
+const ml = {
+  prayers: 'നമസ്കാര സമയം',
+  prayer: 'നമസ്കാരം',
+  adhan: 'ബാങ്ക്',
+  iqamah: 'ഇഖാമത്ത്',
+  next: 'അടുത്ത നമസ്കാരം',
+  finances: 'സാമ്പത്തിക വിവരങ്ങൾ',
+  collected: 'സംഭാവനകൾ',
+  spent: 'ചെലവുകൾ',
+  balance: 'ബാക്കി',
+  sunrise: 'സൂര്യോദയം',
+  jumuah: 'ജുമുഅ',
+  unavailable: 'ഇന്നത്തെ സമയക്രമം ലഭ്യമല്ല.',
+  preview: 'മുൻകാഴ്ച',
+  announcements: 'അറിയിപ്പുകൾ',
+  urgent: 'പ്രധാന അറിയിപ്പ്',
+  unpublished: 'ഈ കേന്ദ്രം സാമ്പത്തിക റിപ്പോർട്ട് പ്രസിദ്ധീകരിച്ചിട്ടില്ല.',
+  coverage: 'രേഖപ്പെടുത്തിയ എല്ലാ ഇടപാടുകളും',
+  published: 'പ്രസിദ്ധീകരിച്ചത്',
+  draft: 'മുൻകാഴ്ച — പ്രസിദ്ധീകരിച്ചിട്ടില്ല',
+  fajr: 'സുബ്ഹ്',
+  dhuhr: 'ദുഹ്ർ',
+  asr: 'അസ്ർ',
+  maghrib: 'മഗ്‌രിബ്',
+  isha: 'ഇശാഅ്',
+}
+const ar = {
+  prayers: 'أوقات الصلاة',
+  prayer: 'الصلاة',
+  adhan: 'الأذان',
+  iqamah: 'الإقامة',
+  next: 'الصلاة القادمة',
+  finances: 'مالية المركز',
+  collected: 'التبرعات',
+  spent: 'المصروفات',
+  balance: 'الرصيد',
+  sunrise: 'الشروق',
+  jumuah: 'الجمعة',
+  unavailable: 'جدول اليوم غير متاح.',
+  preview: 'معاينة',
+  announcements: 'الإعلانات',
+  urgent: 'إعلان مهم',
+  unpublished: 'لم ينشر هذا المركز تقريرًا ماليًا بعد.',
+  coverage: 'جميع المعاملات المسجلة',
+  published: 'نُشر',
+  draft: 'معاينة — لم يُنشر بعد',
+  fajr: 'الفجر',
+  dhuhr: 'الظهر',
+  asr: 'العصر',
+  maghrib: 'المغرب',
+  isha: 'العشاء',
+}
+Object.assign(en, {
+  events: 'Community events',
+  noEvents: 'No events published yet.',
+  involved: 'Get involved',
+  contact: 'Visit or contact us',
+  map: 'View map',
+  overview: 'Overview',
+  remember: 'Remember this center',
+  remembered: 'Preferred center saved',
+  openTv: 'Open TV display',
+  exitTv: 'Exit TV',
+})
+Object.assign(ml, {
+  events: 'പരിപാടികൾ',
+  noEvents: 'പരിപാടികൾ പ്രസിദ്ധീകരിച്ചിട്ടില്ല.',
+  involved: 'പങ്കെടുക്കുക',
+  contact: 'വിലാസവും ബന്ധപ്പെടാനുള്ള വിവരങ്ങളും',
+  map: 'മാപ്പ് കാണുക',
+  overview: 'അവലോകനം',
+  remember: 'ഈ കേന്ദ്രം ഓർക്കുക',
+  remembered: 'കേന്ദ്രം സംരക്ഷിച്ചു',
+  openTv: 'ടിവി പ്രദർശനം',
+  exitTv: 'ടിവിയിൽ നിന്ന് പുറത്തുകടക്കുക',
+})
+Object.assign(ar, {
+  events: 'فعاليات المجتمع',
+  noEvents: 'لم تُنشر فعاليات بعد.',
+  involved: 'شارك معنا',
+  contact: 'زُرنا أو تواصل معنا',
+  map: 'عرض الخريطة',
+  overview: 'نظرة عامة',
+  remember: 'تذكر هذا المركز',
+  remembered: 'تم حفظ المركز المفضل',
+  openTv: 'عرض شاشة التلفاز',
+  exitTv: 'الخروج من شاشة التلفاز',
+})
+export function translations(locale = 'en') {
+  const source = {
+    en: {
+      calculated: 'Calculated for this center · local adjustments applied',
+      manual: 'Published timetable',
+    },
+    ml: {
+      calculated:
+        'കേന്ദ്രത്തിന്റെ സ്ഥാനവും സമയക്രമീകരണവും അടിസ്ഥാനമാക്കിയ സമയം',
+      manual: 'പ്രസിദ്ധീകരിച്ച സമയക്രമം',
+    },
+    ar: {
+      calculated: 'محسوب حسب موقع المركز مع التعديلات المحلية',
+      manual: 'جدول منشور',
+    },
+  }
+  const language = locale.split('-')[0]
+  return {
+    ...en,
+    ...source.en,
+    ...({ en, ml, ar }[language] || {}),
+    ...(source[language] || {}),
+  }
+}
+export function direction(locale = 'en') {
+  return locale.split('-')[0] === 'ar' ? 'rtl' : 'ltr'
+}

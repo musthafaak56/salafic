@@ -22,8 +22,13 @@ export async function record(id, ...path) {
   return snap.exists() ? { ...snap.data(), id: snap.id } : null
 }
 export async function records(id, name, count = 50) {
+  const sorting = ['funds', 'expenses'].includes(name)
+    ? [orderBy('date', 'desc')]
+    : name === 'publicFinance'
+      ? [orderBy('updatedAt', 'desc')]
+      : []
   const snap = await getDocs(
-    query(collection(centerDocument(id), name), limit(count)),
+    query(collection(centerDocument(id), name), ...sorting, limit(count)),
   )
   return snap.docs.map((s) => ({ ...s.data(), id: s.id }))
 }

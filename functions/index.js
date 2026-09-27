@@ -1,11 +1,13 @@
 import { initializeApp } from 'firebase-admin/app'
 import { getAuth } from 'firebase-admin/auth'
 import { getFirestore } from 'firebase-admin/firestore'
-import { onCall, HttpsError } from 'firebase-functions/v2/https'
+import { onCall, onRequest, HttpsError } from 'firebase-functions/v2/https'
 import { onSchedule } from 'firebase-functions/v2/scheduler'
 import { defineSecret, defineString } from 'firebase-functions/params'
 import { createHash } from 'node:crypto'
 import nodemailer from 'nodemailer'
+import { eventFields, zonedInstant } from './time.js'
+import { centerHtml } from './metadata.js'
 import {
   SUPER_ADMIN_EMAIL,
   applicationFields,
@@ -15,6 +17,7 @@ import {
   text,
   email,
   validId,
+  slug,
   minorUnits,
   noticeFields,
   manualSchedule,
@@ -31,7 +34,69 @@ const smtpUser = defineSecret('SMTP_USER')
 const smtpHost = defineString('SMTP_HOST', { default: '' })
 const smtpFrom = defineString('SMTP_FROM', { default: '' })
 const siteUrl = defineString('SITE_URL', { default: 'https://salafic.web.app' })
+export const centerPage = onRequest({ maxInstances: 10 }, async (req, res) => {
+  try {
+    const match = req.path.match(/^\/c\/([^/]+)(?:\/.*)?$/)
+    if (!match) {
+      res.status(404).send('Center unavailable.')
+      return
+    }
+    const mapping = await db
+      .doc(`centerSlugs/${slug(decodeURIComponent(match[1]))}`)
+      .get()
+    const snapshot = mapping.exists
+      ? await centerRef(mapping.data().centerId).get()
+      : null
+    const center = snapshot?.data()
+    const origin = new URL(siteUrl.value()).origin
+    const response = await fetch(`${origin}/index.html`, {
+      signal: AbortSignal.timeout(10000),
+    })
+    if (!response.ok) throw new Error('Application shell unavailable.')
+    const template = await response.text()
+    // Admin and unpublished routes receive only the generic shell, never private identity.
+    if (
+      !center ||
+      center.status !== 'published' ||
+      req.path.includes('/admin')
+    ) {
+      res
+        .set('Cache-Control', 'private, no-store')
+        .status(center ? 200 : 404)
+        .type('html')
+        .send(template)
+      return
+    }
+    res
+      .set('Cache-Control', 'public, max-age=0, s-maxage=60')
+      .type('html')
+      .send(centerHtml(template, center, origin))
+  } catch {
+    res
+      .set('Cache-Control', 'no-store')
+      .status(503)
+      .send('This center is temporarily unavailable. Please try again.')
+  }
+})
 const now = () => new Date().toISOString()
+export const expireAnnouncements = onSchedule('every 30 minutes', async () => {
+  const expired = await db
+    .collectionGroup('announcements')
+    .where('expiresAt', '<=', now())
+    .limit(200)
+    .get()
+  const batch = db.batch()
+  for (const snapshot of expired.docs) {
+    const center = snapshot.ref.parent.parent
+    if (center?.parent.id !== 'masjids') continue
+    batch.set(center.collection('announcementArchive').doc(snapshot.id), {
+      ...snapshot.data(),
+      archivedAt: now(),
+    })
+    batch.delete(snapshot.ref)
+  }
+  if (!expired.empty) await batch.commit()
+})
 const centerRef = (id) => db.collection('masjids').doc(validId(id))
 const identity = (req) => {
   if (!req.auth || !req.auth.token.email_verified)
@@ -223,6 +288,7 @@ export const platformAction = onCall({ maxInstances: 10 }, async (req) => {
             ? {
                 centerId: center.id,
                 adminStatus: assigned ? 'active' : 'invited',
+                centerStatus: 'draft',
               }
             : {}),
           history: [
@@ -306,6 +372,107 @@ export const platformAction = onCall({ maxInstances: 10 }, async (req) => {
       return { ok: true }
     }
     const ref = centerRef(data.centerId)
+    if (action === 'resendInitialInvitation') {
+      await db.runTransaction(async (tx) => {
+        await permissions(tx, user.uid)
+        const applicationRef = db.doc(`centerApplications/${ref.id}`),
+          application = await tx.get(applicationRef)
+        const invitationRef = db.doc(`centerInvitations/${ref.id}`),
+          invitation = await tx.get(invitationRef)
+        if (
+          application.data()?.status !== 'approved' ||
+          application.data()?.adminStatus === 'active' ||
+          !invitation.exists ||
+          invitation.data().status !== 'pending'
+        )
+          throw new Error(
+            'This request does not have a pending administrator invitation.',
+          )
+        tx.update(invitationRef, {
+          expiresAt: new Date(Date.now() + 7 * 86400000).toISOString(),
+        })
+        mail(
+          tx,
+          `${ref.id}-invitation-${db.collection('_').doc().id}`,
+          application.data().designatedAdminEmail,
+          'Your center administrator invitation',
+          notificationText(
+            'Your administrator invitation has been renewed for seven days. Sign in with this verified email and accept it from your requests page.',
+          ),
+        )
+        audit(tx, ref, user.uid, 'initial-invitation.renewed')
+      })
+      return { ok: true }
+    }
+    if (action === 'auditCenterAccess') {
+      await db.runTransaction(async (tx) => {
+        const [platform, member, center] = await Promise.all([
+          tx.get(db.doc(`platformRoles/${user.uid}`)),
+          tx.get(ref.collection('members').doc(user.uid)),
+          tx.get(ref),
+        ])
+        if (
+          !center.exists ||
+          (platform.data()?.role !== 'superadmin' &&
+            !ROLES.includes(member.data()?.role))
+        )
+          throw new HttpsError(
+            'permission-denied',
+            'Center access is unavailable.',
+          )
+        audit(tx, ref, user.uid, 'administration.opened', {
+          platformAccess: platform.data()?.role === 'superadmin',
+        })
+      })
+      return { ok: true }
+    }
+    if (action === 'reconcileFinance') {
+      await db.runTransaction(async (tx) => {
+        await permissions(tx, user.uid, ref.id, 'finance')
+        const [center, state, funds, expenses] = await Promise.all([
+          tx.get(ref),
+          tx.get(ref.collection('financeState').doc('current')),
+          tx.get(ref.collection('funds')),
+          tx.get(ref.collection('expenses')),
+        ])
+        const currency = center.data().currency
+        const total = (snap) =>
+          snap.docs.reduce((sum, doc) => {
+            const row = doc.data()
+            if (row.currency && row.currency !== currency)
+              throw new Error(
+                'Currency mismatch. Review the ledger before reconciling.',
+              )
+            const amount =
+              row.amountMinor ??
+              (Number(row.amount) === 0
+                ? 0
+                : minorUnits(String(row.amount), currency))
+            if (
+              !Number.isSafeInteger(amount) ||
+              !Number.isSafeInteger(sum + amount)
+            )
+              throw new Error('The ledger total exceeds the supported range.')
+            return sum + amount
+          }, 0)
+        tx.set(ref.collection('financeState').doc('current'), {
+          collectedMinor: total(funds),
+          spentMinor: total(expenses),
+          openingBalanceMinor:
+            state.data()?.openingBalanceMinor ||
+            center.data().openingBalanceMinor ||
+            0,
+          currency,
+          version: (state.data()?.version || 0) + 1,
+          updatedAt: now(),
+        })
+        audit(tx, ref, user.uid, 'finance.reconciled', {
+          fundCount: funds.size,
+          expenseCount: expenses.size,
+        })
+      })
+      return { ok: true }
+    }
     if (action === 'contentWrite') {
       if (!['events', 'forms'].includes(data.collection))
         throw new Error('Invalid content collection.')
@@ -313,23 +480,19 @@ export const platformAction = onCall({ maxInstances: 10 }, async (req) => {
         .collection(data.collection)
         .doc(data.id ? validId(data.id) : db.collection('_').doc().id)
       let clean
-      if (!data.remove) {
+      let draftToken
+      if (!data.remove && !data.publish) {
         const p = data.payload || {}
         clean = {
           title: text(p.title, 150),
           description: text(p.description || '', 2000, false),
         }
         if (data.collection === 'events') {
-          if (
-            !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(p.eventAt) ||
-            !Number.isFinite(Date.parse(p.eventAt))
-          )
-            throw new Error('Enter a valid event date and time.')
           clean = {
             ...clean,
             titleMl: text(p.titleMl || '', 150, false),
             descriptionMl: text(p.descriptionMl || '', 2000, false),
-            eventAt: p.eventAt,
+            eventLocal: p.eventLocal || p.eventAt,
             location: text(p.location || '', 300, false),
             repeat: p.repeat === 'weekly' ? 'weekly' : 'once',
           }
@@ -376,13 +539,46 @@ export const platformAction = onCall({ maxInstances: 10 }, async (req) => {
       await db.runTransaction(async (tx) => {
         await permissions(tx, user.uid, ref.id, 'content')
         const old = await tx.get(target)
-        if (data.remove) tx.delete(target)
-        else
+        const center = await tx.get(ref)
+        const draftRef = ref
+          .collection(
+            data.collection === 'events' ? 'eventDrafts' : 'formDrafts',
+          )
+          .doc(target.id)
+        const savedDraft = await tx.get(draftRef)
+        if (data.publish) {
+          if (!savedDraft.exists)
+            throw new Error('Save and review a draft first.')
+          if (data.token !== savedDraft.data().token)
+            throw new Error(
+              'The draft changed. Review the latest preview before publishing.',
+            )
+          checkVersion(old.data()?.version || 0, savedDraft.data().baseVersion)
+          clean = savedDraft.data().payload
+        }
+        if (!data.remove && data.collection === 'events')
+          clean = { ...clean, ...eventFields(clean, center.data().timezone) }
+        if (data.draft) {
+          checkVersion(old.data()?.version || 0, data.version || 0)
+          draftToken = db.collection('_').doc().id
+          tx.set(draftRef, {
+            payload: clean,
+            token: draftToken,
+            baseVersion: old.data()?.version || 0,
+            authorUid: user.uid,
+            updatedAt: now(),
+          })
+        } else if (data.remove) {
+          tx.delete(target)
+          tx.delete(draftRef)
+        } else
           tx.set(target, {
             ...clean,
+            version: (old.data()?.version || 0) + 1,
             createdAt: old.data()?.createdAt || now(),
             updatedAt: now(),
           })
+        if (data.publish) tx.delete(draftRef)
         audit(
           tx,
           ref,
@@ -391,7 +587,7 @@ export const platformAction = onCall({ maxInstances: 10 }, async (req) => {
           { recordId: target.id },
         )
       })
-      return { id: target.id }
+      return { id: target.id, ...(draftToken ? { token: draftToken } : {}) }
     }
     if (action === 'inviteMember') {
       const address = email(data.email),
@@ -462,6 +658,31 @@ export const platformAction = onCall({ maxInstances: 10 }, async (req) => {
           })
         }
         audit(tx, ref, user.uid, 'ownership.transferred', { newOwnerUid: uid })
+      })
+      return { ok: true }
+    }
+    if (action === 'changeMemberRole') {
+      const uid = validId(data.uid)
+      if (!['admin', 'finance', 'editor'].includes(data.role))
+        throw new Error('Select a staff role. Transfer ownership separately.')
+      await db.runTransaction(async (tx) => {
+        await permissions(tx, user.uid, ref.id, 'team')
+        const recipientRef = ref.collection('members').doc(uid),
+          recipient = await tx.get(recipientRef)
+        if (!recipient.exists || recipient.data().role === 'owner')
+          throw new Error(
+            'Owner permissions require the ownership-transfer flow.',
+          )
+        tx.update(recipientRef, { role: data.role })
+        tx.set(db.doc(`userCenters/${uid}/centers/${ref.id}`), {
+          centerId: ref.id,
+          role: data.role,
+        })
+        audit(tx, ref, user.uid, 'member.role-changed', {
+          memberUid: uid,
+          previousRole: recipient.data().role,
+          role: data.role,
+        })
       })
       return { ok: true }
     }
@@ -541,16 +762,29 @@ export const platformAction = onCall({ maxInstances: 10 }, async (req) => {
         await permissions(tx, user.uid, ref.id, 'team')
         const snap = await tx.get(ref),
           old = snap.data()
+        const nextSlug = slug(data.fields.slug || old.slug)
+        const slugRef = db.doc(`centerSlugs/${nextSlug}`)
+        const mapping = await tx.get(slugRef)
+        const applicationRef = db.doc(`centerApplications/${ref.id}`)
+        const application = await tx.get(applicationRef)
+        if (mapping.exists && mapping.data().centerId !== ref.id)
+          throw new Error('This center URL is already taken.')
         checkVersion(old.version, data.version)
         if (fields.currency !== old.currency)
           throw new Error('Currency is fixed when the center is created.')
         tx.update(ref, {
           ...fields,
+          slug: nextSlug,
           searchName: fields.displayName.toLowerCase(),
           status: data.published ? 'published' : 'draft',
           version: old.version + 1,
           updatedAt: now(),
         })
+        if (!mapping.exists) tx.create(slugRef, { centerId: ref.id })
+        if (application.exists)
+          tx.update(applicationRef, {
+            centerStatus: data.published ? 'published' : 'draft',
+          })
         audit(tx, ref, user.uid, 'settings.updated')
       })
       return { ok: true }
@@ -582,6 +816,14 @@ export const platformAction = onCall({ maxInstances: 10 }, async (req) => {
           currency: center.data().currency,
           updatedAt: now(),
         }
+        if (
+          ![
+            next.collectedMinor,
+            next.spentMinor,
+            next.openingBalanceMinor,
+          ].every(Number.isSafeInteger)
+        )
+          throw new Error('The ledger total exceeds the supported range.')
         tx.create(entry, {
           amountMinor: value,
           currency: center.data().currency,
@@ -624,6 +866,27 @@ export const platformAction = onCall({ maxInstances: 10 }, async (req) => {
         )
         const live = await tx.get(target),
           draft = await tx.get(draftRef)
+        const scheduleCenter =
+          kind === 'prayer'
+            ? live
+            : kind === 'manual'
+              ? await tx.get(ref)
+              : null
+        if (
+          action === 'publish' &&
+          scheduleCenter &&
+          draft.data()?.centerVersion !== (scheduleCenter.data()?.version || 0)
+        )
+          throw new Error(
+            'The center location or settings changed. Save and review a new preview before publishing.',
+          )
+        if (
+          action === 'publish' &&
+          (!draft.exists || data.token !== draft.data().token)
+        )
+          throw new Error(
+            'The draft changed. Review the latest preview before publishing.',
+          )
         const version =
           kind === 'prayer'
             ? live.data()?.prayerVersion || 0
@@ -656,6 +919,18 @@ export const platformAction = onCall({ maxInstances: 10 }, async (req) => {
         if (kind === 'prayer') payload = prayerSettings(payload)
         else if (kind === 'manual') {
           payload = manualSchedule(payload)
+          for (const key of ['fajr', 'dhuhr', 'asr', 'maghrib', 'isha']) {
+            zonedInstant(
+              payload.date,
+              payload[key].adhaan,
+              scheduleCenter.data().timezone,
+            )
+            zonedInstant(
+              payload.date,
+              payload[key].iqama,
+              scheduleCenter.data().timezone,
+            )
+          }
           if (payload.date !== id)
             throw new Error('The schedule date must match the selected date.')
         } else if (kind === 'announcement') {
@@ -696,6 +971,10 @@ export const platformAction = onCall({ maxInstances: 10 }, async (req) => {
             kind,
             targetId: id,
             payload,
+            token: db.collection('_').doc().id,
+            ...(scheduleCenter
+              ? { centerVersion: scheduleCenter.data()?.version || 0 }
+              : {}),
             baseVersion: version,
             authorUid: user.uid,
             updatedAt: now(),
@@ -713,6 +992,13 @@ export const platformAction = onCall({ maxInstances: 10 }, async (req) => {
               updatedAt: now(),
             })
           else tx.set(target, publication)
+          if (kind === 'finance')
+            tx.create(
+              ref
+                .collection('publicFinance')
+                .doc(`report-${db.collection('_').doc().id}`),
+              publication,
+            )
           tx.create(ref.collection('contentRevisions').doc(), {
             kind,
             targetId: id,

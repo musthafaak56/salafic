@@ -7,12 +7,14 @@ import {
   useLocation,
 } from 'react-router-dom'
 import { AuthProvider } from './context/AuthContext'
+import { LanguageProvider } from './context/LanguageContext'
 import { ThemeProvider } from './context/ThemeContext'
 import CenterRoute, { useCenter } from './context/CenterContext'
 import { useAuth } from './context/AuthContext'
 import Login from './pages/Login'
 import Register from './pages/Register'
-import Quran from './pages/Quran'
+import { lazy, Suspense } from 'react'
+const Quran = lazy(() => import('./pages/Quran'))
 import QhlsDocuments from './pages/QhlsDocuments'
 import Centers from './pages/Centers'
 import CenterHome from './pages/CenterHome'
@@ -71,89 +73,107 @@ function Legacy({ admin = false, form = false }) {
 export default function App() {
   return (
     <ThemeProvider>
-      <AuthProvider>
-        <BrowserRouter>
-          <Routes>
-            <Route path="/" element={<Centers />} />
-            <Route path="/centers" element={<Centers />} />
-            <Route path="/login" element={<Login />} />
-            <Route path="/register" element={<Register />} />
-            <Route path="/quran" element={<Quran />} />
-            <Route path="/qhl-documents" element={<QhlsDocuments />} />
-            <Route
-              path="/onboarding"
-              element={
-                <Access>
-                  <CenterRequests />
-                </Access>
-              }
-            />
-            <Route
-              path="/platform"
-              element={
-                <Access platform>
-                  <CenterRequests review />
-                </Access>
-              }
-            />
-            <Route path="/c/:slug" element={<CenterRoute />}>
-              <Route index element={<CenterHome />} />
-              <Route path="prayer-times" element={<CenterTimetable />} />
-              <Route path="finances" element={<CenterHome />} />
-              <Route path="events" element={<CenterHome />} />
-              <Route path="tv" element={<CenterHome tv />} />
-              <Route path="forms/:formId" element={<PublicForm />} />
+      <LanguageProvider>
+        <AuthProvider>
+          <BrowserRouter>
+            <Routes>
+              <Route path="/" element={<Centers />} />
+              <Route path="/centers" element={<Centers />} />
+              <Route path="/login" element={<Login />} />
+              <Route path="/register" element={<Register />} />
               <Route
-                path="admin"
+                path="/quran"
+                element={
+                  <Suspense
+                    fallback={
+                      <main className="platform-page">
+                        <p role="status">Loading Quran tools…</p>
+                      </main>
+                    }
+                  >
+                    <Quran />
+                  </Suspense>
+                }
+              />
+              <Route path="/qhl-documents" element={<QhlsDocuments />} />
+              <Route
+                path="/onboarding"
                 element={
                   <Access>
-                    <CenterAdminLayout />
+                    <CenterRequests />
                   </Access>
                 }
-              >
-                <Route index element={<CenterOverview />} />
-                <Route path="settings" element={<CenterSettings />} />
+              />
+              <Route
+                path="/platform"
+                element={
+                  <Access platform>
+                    <CenterRequests review />
+                  </Access>
+                }
+              />
+              <Route path="/c/:slug" element={<CenterRoute />}>
+                <Route index element={<CenterHome />} />
+                <Route path="prayer-times" element={<CenterTimetable />} />
+                <Route path="finances" element={<CenterHome />} />
+                <Route path="events" element={<CenterHome />} />
+                <Route path="tv" element={<CenterHome tv />} />
+                <Route path="forms/:formId" element={<PublicForm />} />
                 <Route
-                  path="prayer-times"
+                  path="admin"
                   element={
-                    <>
-                      <CenterPrayers />
-                      <ManualTimetable />
-                    </>
+                    <Access>
+                      <CenterAdminLayout />
+                    </Access>
                   }
-                />
-                <Route path="announcements" element={<CenterAnnouncements />} />
-                <Route path="finances" element={<CenterFinances />} />
-                <Route
-                  path="donations"
-                  element={<Navigate to="../finances" replace />}
-                />
-                <Route
-                  path="expenses"
-                  element={<Navigate to="../finances" replace />}
-                />
-                <Route path="team" element={<CenterTeam />} />
-                <Route path="events" element={<Events />} />
-                <Route path="forms" element={<Forms />} />
-                <Route path="forms/new" element={<FormBuilder />} />
-                <Route path="forms/:formId/edit" element={<FormBuilder />} />
-                <Route
-                  path="forms/:formId/submissions"
-                  element={<FormSubmissions />}
-                />
+                >
+                  <Route index element={<CenterOverview />} />
+                  <Route path="settings" element={<CenterSettings />} />
+                  <Route
+                    path="prayer-times"
+                    element={
+                      <>
+                        <CenterPrayers />
+                        <ManualTimetable />
+                      </>
+                    }
+                  />
+                  <Route
+                    path="announcements"
+                    element={<CenterAnnouncements />}
+                  />
+                  <Route path="finances" element={<CenterFinances />} />
+                  <Route
+                    path="donations"
+                    element={<Navigate to="../finances" replace />}
+                  />
+                  <Route
+                    path="expenses"
+                    element={<Navigate to="../finances" replace />}
+                  />
+                  <Route path="team" element={<CenterTeam />} />
+                  <Route path="events" element={<Events />} />
+                  <Route path="forms" element={<Forms />} />
+                  <Route path="forms/new" element={<FormBuilder />} />
+                  <Route path="forms/:formId/edit" element={<FormBuilder />} />
+                  <Route
+                    path="forms/:formId/submissions"
+                    element={<FormSubmissions />}
+                  />
+                </Route>
               </Route>
-            </Route>
-            <Route path="/tv" element={<Legacy />} />
-            <Route path="/forms/:formId" element={<Legacy form />} />
-            <Route path="/admin/*" element={<Legacy admin />} />
-            <Route
-              path="/superadmin/*"
-              element={<Navigate to="/platform" replace />}
-            />
-            <Route path="*" element={<Navigate to="/centers" replace />} />
-          </Routes>
-        </BrowserRouter>
-      </AuthProvider>
+              <Route path="/tv" element={<Legacy />} />
+              <Route path="/forms/:formId" element={<Legacy form />} />
+              <Route path="/admin/*" element={<Legacy admin />} />
+              <Route
+                path="/superadmin/*"
+                element={<Navigate to="/platform" replace />}
+              />
+              <Route path="*" element={<Navigate to="/centers" replace />} />
+            </Routes>
+          </BrowserRouter>
+        </AuthProvider>
+      </LanguageProvider>
     </ThemeProvider>
   )
 }

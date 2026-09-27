@@ -11,6 +11,12 @@ export default function CenterRoute() {
   const { slug } = useParams()
   const { user, profile } = useAuth()
   const [state, setState] = useState({ slug: '', loading: true })
+  const [connection, setConnection] = useState(0)
+  useEffect(() => {
+    const reconnect = () => setConnection((n) => n + 1)
+    window.addEventListener('online', reconnect)
+    return () => window.removeEventListener('online', reconnect)
+  }, [])
   useEffect(() => {
     let active = true,
       unsubscribe = () => {}
@@ -38,7 +44,11 @@ export default function CenterRoute() {
               try {
                 localStorage.setItem(
                   `center:${slug}`,
-                  JSON.stringify({ center, savedAt: Date.now() }),
+                  JSON.stringify({
+                    center,
+                    requestedSlug: slug,
+                    savedAt: Date.now(),
+                  }),
                 )
               } catch {}
           },
@@ -50,7 +60,7 @@ export default function CenterRoute() {
                   localStorage.getItem(`center:${slug}`),
                 )
                 if (
-                  cached?.center?.slug === slug &&
+                  (cached?.requestedSlug || cached?.center?.slug) === slug &&
                   Date.now() - cached.savedAt < 7 * 86400000
                 ) {
                   setState({ slug, center: cached.center, offline: true })
@@ -76,7 +86,7 @@ export default function CenterRoute() {
           try {
             const cached = JSON.parse(localStorage.getItem(`center:${slug}`))
             if (
-              cached?.center?.slug === slug &&
+              (cached?.requestedSlug || cached?.center?.slug) === slug &&
               Date.now() - cached.savedAt < 7 * 86400000
             ) {
               setState({ slug, center: cached.center, offline: true })
@@ -91,7 +101,7 @@ export default function CenterRoute() {
       active = false
       unsubscribe()
     }
-  }, [slug, user?.uid, profile?.role])
+  }, [slug, user?.uid, profile?.role, connection])
   if (state.slug !== slug || state.loading)
     return (
       <main className="platform-page">

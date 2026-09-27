@@ -1,6 +1,13 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { collection, onSnapshot, query, where, limit } from 'firebase/firestore'
+import {
+  collection,
+  onSnapshot,
+  query,
+  where,
+  limit,
+  orderBy,
+} from 'firebase/firestore'
 import { db } from '../lib/firebase'
 import { act } from '../lib/platform'
 import { useAuth } from '../context/AuthContext'
@@ -32,11 +39,20 @@ export default function CenterRequests({ review = false }) {
     [editing, setEditing] = useState(null),
     [filter, setFilter] = useState('all')
   const action = useAction()
+  const [pageSize, setPageSize] = useState(50)
   useEffect(() => {
     if (!user) return
     const constraints = review ? [] : [where('submitterUid', '==', user.uid)]
+    if (filter !== 'all') constraints.push(where('status', '==', filter))
+    setLoading(true)
+    setError('')
     return onSnapshot(
-      query(collection(db, 'centerApplications'), ...constraints, limit(100)),
+      query(
+        collection(db, 'centerApplications'),
+        ...constraints,
+        orderBy('createdAt', 'desc'),
+        limit(pageSize),
+      ),
       (snap) => {
         setItems(
           snap.docs
@@ -50,7 +66,7 @@ export default function CenterRequests({ review = false }) {
         setLoading(false)
       },
     )
-  }, [user?.uid, review])
+  }, [user?.uid, review, filter, pageSize])
   return (
     <Shell
       eyebrow={
@@ -113,6 +129,10 @@ export default function CenterRequests({ review = false }) {
             }}
           >
             <CenterFields value={fields} onChange={setFields} request />
+            <label className="platform-check">
+              <input type="checkbox" required />I have confirmed the center
+              coordinates and timezone.
+            </label>
             <p className="platform-hint">
               Confirm the timezone and coordinates of the center. Prayer times
               will use this location. The designated administrator must verify
@@ -130,7 +150,10 @@ export default function CenterRequests({ review = false }) {
           <Input
             label="Status"
             value={filter}
-            onChange={setFilter}
+            onChange={(value) => {
+              setFilter(value)
+              setPageSize(50)
+            }}
             options={[
               { value: 'all', label: 'All requests' },
               ...Object.entries(labels).map(([value, label]) => ({
@@ -149,6 +172,13 @@ export default function CenterRequests({ review = false }) {
               key={item.id}
               item={item}
               review={review}
+              onResend={() =>
+                action.run(
+                  () =>
+                    act('resendInitialInvitation', { centerId: item.centerId }),
+                  'Administrator invitation renewed and notification queued.',
+                )
+              }
               busy={action.busy}
               onReview={(status, feedback) =>
                 action.run(
@@ -173,11 +203,28 @@ export default function CenterRequests({ review = false }) {
               }
             />
           ))}
+        {items.length === pageSize && (
+          <Button
+            variant="outline"
+            loading={loading}
+            onClick={() => setPageSize(pageSize + 50)}
+          >
+            Load more requests
+          </Button>
+        )}
       </section>
     </Shell>
   )
 }
-function Request({ item, review, busy, onReview, onEdit, duplicates }) {
+function Request({
+  item,
+  review,
+  busy,
+  onReview,
+  onEdit,
+  onResend,
+  duplicates,
+}) {
   const [feedback, setFeedback] = useState('')
   return (
     <article className="request-item">
@@ -200,10 +247,18 @@ function Request({ item, review, busy, onReview, onEdit, duplicates }) {
       {item.feedback && <blockquote>{item.feedback}</blockquote>}
       {item.status === 'approved' && (
         <p>
-          Admin access: {item.adminStatus} ·{' '}
+          Admin access: {item.adminStatus} · Center:{' '}
+          {item.centerStatus || 'draft'} ·{' '}
           <Link to={`/c/${item.slug}/admin`}>Open center</Link>
         </p>
       )}
+      {review &&
+        item.status === 'approved' &&
+        item.adminStatus === 'invited' && (
+          <Button variant="outline" loading={busy} onClick={onResend}>
+            Renew admin invitation
+          </Button>
+        )}
       <details>
         <summary>Request history</summary>
         <ol>

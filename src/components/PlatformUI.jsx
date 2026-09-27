@@ -2,15 +2,24 @@ import { useState } from 'react'
 import { Link, NavLink } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { useCenter } from '../context/CenterContext'
+import { useLanguage } from '../context/LanguageContext'
 import ThemeToggle from './ThemeToggle'
 import Button from './Button'
 import { inputClass } from './Field'
 
-export function Shell({ children, title, eyebrow, description, actions }) {
+export function Shell({
+  children,
+  title,
+  eyebrow,
+  description,
+  actions,
+  dir,
+  lang,
+}) {
   return (
     <>
       <PlatformHeader />
-      <main className="platform-page">
+      <main className="platform-page" dir={dir} lang={lang}>
         <header className="platform-heading">
           <div>
             {eyebrow && <p className="eyebrow">{eyebrow}</p>}
@@ -30,6 +39,7 @@ export function Shell({ children, title, eyebrow, description, actions }) {
 export function PlatformHeader() {
   const { user, profile, logout } = useAuth()
   const context = useCenter()
+  const { language, setLanguage } = useLanguage()
   const [open, setOpen] = useState(false)
   const mine = profile?.centers?.find((c) => c.id === context?.centerId)
   return (
@@ -63,6 +73,17 @@ export function PlatformHeader() {
           )}
         </nav>
         <div className="platform-account">
+          <select
+            aria-label="Interface language"
+            className="language-select"
+            value={language}
+            onChange={(e) => setLanguage(e.target.value)}
+          >
+            <option value="">Center language</option>
+            <option value="en">English</option>
+            <option value="ml">മലയാളം</option>
+            <option value="ar">العربية</option>
+          </select>
           <ThemeToggle />
           {user ? (
             <Button variant="ghost" onClick={logout}>
@@ -258,6 +279,50 @@ export function CenterFields({
         onChange={set('description')}
         maxLength={1000}
       />
+      {!request && (
+        <>
+          <Input
+            label="Center URL"
+            value={value.slug}
+            onChange={set('slug')}
+            pattern="[a-z0-9]+(-[a-z0-9]+)*"
+            required
+          />
+          <Input
+            label="Time format"
+            value={value.timeFormat || '12'}
+            onChange={set('timeFormat')}
+            options={[
+              { value: '12', label: '12-hour' },
+              { value: '24', label: '24-hour' },
+            ]}
+          />
+          <Input
+            label="Hijri date adjustment (days)"
+            type="number"
+            min="-2"
+            max="2"
+            step="1"
+            value={value.hijriAdjustment || 0}
+            onChange={set('hijriAdjustment')}
+          />
+          {['finances', 'events', 'forms'].map((key) => (
+            <label className="platform-check" key={key}>
+              <input
+                type="checkbox"
+                checked={value.modules?.[key] !== false}
+                onChange={(e) =>
+                  onChange({
+                    ...value,
+                    modules: { ...value.modules, [key]: e.target.checked },
+                  })
+                }
+              />
+              Show {key} publicly
+            </label>
+          ))}
+        </>
+      )}
       {request && (
         <>
           <Input
@@ -277,13 +342,40 @@ export function CenterFields({
           />
         </>
       )}
-      {!request && <>
-        <Input label="Logo URL (HTTPS)" type="url" value={value.logoUrl} onChange={set('logoUrl')} />
-        <Input label="Cover image URL (HTTPS)" type="url" value={value.coverUrl} onChange={set('coverUrl')} />
-        <Input label="Public contact email" type="email" value={value.contactEmail} onChange={set('contactEmail')} />
-        <Input label="Public phone number" type="tel" value={value.phone} onChange={set('phone')} />
-        <Input label="Website (HTTPS)" type="url" value={value.websiteUrl} onChange={set('websiteUrl')} />
-      </>}
+      {!request && (
+        <>
+          <Input
+            label="Logo URL (HTTPS)"
+            type="url"
+            value={value.logoUrl}
+            onChange={set('logoUrl')}
+          />
+          <Input
+            label="Cover image URL (HTTPS)"
+            type="url"
+            value={value.coverUrl}
+            onChange={set('coverUrl')}
+          />
+          <Input
+            label="Public contact email"
+            type="email"
+            value={value.contactEmail}
+            onChange={set('contactEmail')}
+          />
+          <Input
+            label="Public phone number"
+            type="tel"
+            value={value.phone}
+            onChange={set('phone')}
+          />
+          <Input
+            label="Website (HTTPS)"
+            type="url"
+            value={value.websiteUrl}
+            onChange={set('websiteUrl')}
+          />
+        </>
+      )}
     </div>
   )
 }

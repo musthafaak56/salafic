@@ -7,6 +7,13 @@ import Button from '../components/Button'
 
 export default function Centers() {
   const { profile } = useAuth()
+  const [preferred] = useState(() => {
+    try {
+      return JSON.parse(localStorage.getItem('preferred-center'))
+    } catch {
+      return null
+    }
+  })
   const [filters, setFilters] = useState({ name: '', country: '', city: '' })
   const [result, setResult] = useState({ items: [] }),
     [busy, setBusy] = useState(true),
@@ -43,6 +50,17 @@ export default function Centers() {
         </Link>
       }
     >
+      {preferred?.slug && (
+        <section className="platform-section">
+          <p>Your preferred center</p>
+          <Link to={`/c/${encodeURIComponent(preferred.slug)}`}>
+            {preferred.displayName} →
+          </Link>
+          <p className="platform-hint">
+            Choose another center below at any time.
+          </p>
+        </section>
+      )}
       {!!profile?.centers?.length && (
         <section className="platform-section">
           <h2>Your centers</h2>

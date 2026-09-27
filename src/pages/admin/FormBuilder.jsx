@@ -1,7 +1,8 @@
 import { useCenter } from '../../context/CenterContext'
 import { useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { addForm, getForm, updateForm } from '../../lib/firestore'
+import { getForm } from '../../lib/firestore'
+import { act } from '../../lib/platform'
 import Button from '../../components/Button'
 import Card from '../../components/Card'
 import Field, { inputClass } from '../../components/Field'
@@ -22,7 +23,10 @@ export const FIELD_TYPES = [
 const OPTION_TYPES = ['select', 'radio', 'checkbox']
 
 function newId() {
-  return crypto.randomUUID?.() ?? `f-${Date.now()}-${Math.random().toString(16).slice(2)}`
+  return (
+    crypto.randomUUID?.() ??
+    `f-${Date.now()}-${Math.random().toString(16).slice(2)}`
+  )
 }
 
 export default function FormBuilder() {
@@ -37,6 +41,9 @@ export default function FormBuilder() {
   const [open, setOpen] = useState(true)
   const [loading, setLoading] = useState(editing)
   const [error, setError] = useState('')
+  const [version, setVersion] = useState(0)
+  const [draft, setDraft] = useState(null)
+  const [draftId] = useState(() => (editing ? formId : newId()))
 
   useEffect(() => {
     if (!editing) return
@@ -51,13 +58,14 @@ export default function FormBuilder() {
         setDescription(form.description ?? '')
         setFields(form.fields ?? [])
         setOpen(form.open !== false)
+        setVersion(form.version || 0)
       })
       .finally(() => setLoading(false))
   }, [formId, editing, centerId])
 
   function updateField(fieldId, patch) {
     setFields((list) =>
-      list.map((f) => (f.id === fieldId ? { ...f, ...patch } : f))
+      list.map((f) => (f.id === fieldId ? { ...f, ...patch } : f)),
     )
   }
 
@@ -104,7 +112,7 @@ export default function FormBuilder() {
     }
     if (
       cleanFields.some(
-        (f) => OPTION_TYPES.includes(f.type) && f.options.length === 0
+        (f) => OPTION_TYPES.includes(f.type) && f.options.length === 0,
       )
     ) {
       setError('Choice questions need at least one option.')
@@ -119,12 +127,15 @@ export default function FormBuilder() {
       byName: 'admin',
     }
     try {
-      if (editing) {
-        await updateForm(centerId, formId, data)
-      } else {
-        await addForm(centerId, data)
-      }
-      navigate(`${base}/admin/forms`)
+      const saved = await act('contentWrite', {
+        centerId,
+        collection: 'forms',
+        id: draftId,
+        payload: data,
+        draft: true,
+        version,
+      })
+      setDraft({ ...data, token: saved.token })
     } catch (err) {
       setError(err.message)
     }
@@ -139,15 +150,54 @@ export default function FormBuilder() {
           {editing ? 'Edit form' : 'Create a form'}
         </h1>
         <p className="mt-2 text-sm text-ink-secondary">
-          Build a registration form for an event. The public can fill it
-          at its own link, and submissions come back here.
+          Build a registration form for an event. The public can fill it at its
+          own link, and submissions come back here.
         </p>
       </section>
 
       <form onSubmit={handleSubmit} className="space-y-6" noValidate>
+        {draft && (
+          <section className="publication-preview">
+            <p className="eyebrow">Private preview</p>
+            <h2>{draft.title}</h2>
+            <p>{draft.description}</p>
+            <ol>
+              {draft.fields.map((f) => (
+                <li key={f.id}>
+                  {f.label}
+                  {f.required ? ' *' : ''} · {f.type}
+                  {f.options.length ? ` · ${f.options.join(', ')}` : ''}
+                </li>
+              ))}
+            </ol>
+            <Button
+              type="button"
+              onClick={async () => {
+                try {
+                  await act('contentWrite', {
+                    centerId,
+                    collection: 'forms',
+                    id: draftId,
+                    publish: true,
+                    token: draft.token,
+                  })
+                  navigate(`${base}/admin/forms`)
+                } catch (err) {
+                  setError(err.message)
+                }
+              }}
+            >
+              Publish reviewed form
+            </Button>
+          </section>
+        )}
         <Card className="p-6">
           <div className="space-y-4">
-            <Field label="Form title" htmlFor="form-title" hint="e.g. Eid picnic registration">
+            <Field
+              label="Form title"
+              htmlFor="form-title"
+              hint="e.g. Eid picnic registration"
+            >
               <input
                 id="form-title"
                 type="text"
@@ -159,7 +209,11 @@ export default function FormBuilder() {
                 className={inputClass}
               />
             </Field>
-            <Field label="Event (optional)" htmlFor="form-event" hint="Which event this form belongs to.">
+            <Field
+              label="Event (optional)"
+              htmlFor="form-event"
+              hint="Which event this form belongs to."
+            >
               <input
                 id="form-event"
                 type="text"
@@ -196,7 +250,12 @@ export default function FormBuilder() {
         <Card className="p-6">
           <div className="mb-4 flex items-center justify-between">
             <h2 className="text-xl font-semibold text-ink">Questions</h2>
-            <Button type="button" variant="outline" size="sm" onClick={addField}>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={addField}
+            >
               + Add question
             </Button>
           </div>
@@ -208,9 +267,15 @@ export default function FormBuilder() {
           ) : (
             <ul className="space-y-4">
               {fields.map((field, index) => (
-                <li key={field.id} className="rounded-xl border border-line bg-surface-subtle p-4">
+                <li
+                  key={field.id}
+                  className="rounded-xl border border-line bg-surface-subtle p-4"
+                >
                   <div className="grid gap-4 lg:grid-cols-[1fr_auto]">
-                    <Field label={`Question ${index + 1}`} htmlFor={`field-label-${field.id}`}>
+                    <Field
+                      label={`Question ${index + 1}`}
+                      htmlFor={`field-label-${field.id}`}
+                    >
                       <input
                         id={`field-label-${field.id}`}
                         type="text"
@@ -218,15 +283,22 @@ export default function FormBuilder() {
                         maxLength={140}
                         placeholder="e.g. Full name"
                         value={field.label}
-                        onChange={(e) => updateField(field.id, { label: e.target.value })}
+                        onChange={(e) =>
+                          updateField(field.id, { label: e.target.value })
+                        }
                         className={inputClass}
                       />
                     </Field>
-                    <Field label="Answer type" htmlFor={`field-type-${field.id}`}>
+                    <Field
+                      label="Answer type"
+                      htmlFor={`field-type-${field.id}`}
+                    >
                       <select
                         id={`field-type-${field.id}`}
                         value={field.type}
-                        onChange={(e) => updateField(field.id, { type: e.target.value })}
+                        onChange={(e) =>
+                          updateField(field.id, { type: e.target.value })
+                        }
                         className={inputClass}
                       >
                         {FIELD_TYPES.map((t) => (
@@ -249,7 +321,9 @@ export default function FormBuilder() {
                         placeholder={'Adults\nChildren'}
                         value={(field.options ?? []).join('\n')}
                         onChange={(e) =>
-                          updateField(field.id, { options: e.target.value.split('\n') })
+                          updateField(field.id, {
+                            options: e.target.value.split('\n'),
+                          })
                         }
                         className={inputClass}
                       />
@@ -260,7 +334,9 @@ export default function FormBuilder() {
                       <input
                         type="checkbox"
                         checked={Boolean(field.required)}
-                        onChange={(e) => updateField(field.id, { required: e.target.checked })}
+                        onChange={(e) =>
+                          updateField(field.id, { required: e.target.checked })
+                        }
                         className="h-4 w-4 rounded border-line accent-primary focus:ring-primary/30"
                       />
                       Required
@@ -301,14 +377,21 @@ export default function FormBuilder() {
         </Card>
 
         {error ? (
-          <p className="rounded-lg border border-negative/30 bg-negative/10 p-3 text-sm text-negative" role="alert">
+          <p
+            className="rounded-lg border border-negative/30 bg-negative/10 p-3 text-sm text-negative"
+            role="alert"
+          >
             {error}
           </p>
         ) : null}
 
         <div className="flex items-center gap-3">
-          <Button type="submit">{editing ? 'Save changes' : 'Create form'}</Button>
-          <Button variant="ghost" type="button" onClick={() => navigate(`${base}/admin/forms`)}>
+          <Button type="submit">Save draft & preview</Button>
+          <Button
+            variant="ghost"
+            type="button"
+            onClick={() => navigate(`${base}/admin/forms`)}
+          >
             Cancel
           </Button>
         </div>

@@ -8,16 +8,23 @@ import { Input, Message, Shell } from '../components/PlatformUI'
 import { PrayerBoard } from '../components/CenterPublicParts'
 import { Publishing } from './CenterAdmin'
 import Button from '../components/Button'
+import PrayerPoster from '../components/PrayerPoster'
 
 export default function CenterTimetable() {
   const { center, centerId } = useCenter(),
     [month, setMonth] = useState(localDate(center.timezone).slice(0, 7)),
     [manual, setManual] = useState({}),
+    [loading, setLoading] = useState(true),
     [error, setError] = useState('')
   useEffect(() => {
     let active = true
     setError('')
     setManual({})
+    setLoading(true)
+    if (!/^\d{4}-\d{2}$/.test(month)) {
+      setLoading(false)
+      return
+    }
     getDocs(
       query(
         collection(centerDocument(centerId), 'prayerTimes'),
@@ -26,14 +33,17 @@ export default function CenterTimetable() {
       ),
     )
       .then((s) => {
-        if (active)
+        if (active) {
           setManual(Object.fromEntries(s.docs.map((d) => [d.id, d.data()])))
+          setLoading(false)
+        }
       })
       .catch(() => {
         if (active)
           setError(
             'Published timetable could not be loaded. Calculated times below may not include manual overrides.',
           )
+        if (active) setLoading(false)
       })
     return () => {
       active = false
@@ -43,10 +53,12 @@ export default function CenterTimetable() {
     count = new Date(year, m, 0).getDate()
   let rows = []
   try {
-    rows = Array.from({ length: count }, (_, i) => {
-      const date = `${month}-${String(i + 1).padStart(2, '0')}`
-      return calculateSchedule(center, date, manual[date])
-    })
+    rows = loading
+      ? []
+      : Array.from({ length: count }, (_, i) => {
+          const date = `${month}-${String(i + 1).padStart(2, '0')}`
+          return calculateSchedule(center, date, manual[date])
+        })
   } catch {}
   return (
     <Shell
@@ -59,8 +71,10 @@ export default function CenterTimetable() {
         <Button variant="outline" onClick={() => window.print()}>
           Print / save PDF
         </Button>
+        <PrayerPoster center={center} />
       </div>
       {error && <Message error>{error}</Message>}
+      {loading && <p role="status">Loading published timetables…</p>}
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <caption className="text-start py-4">

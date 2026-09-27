@@ -2,7 +2,8 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { toBlob, toCanvas } from 'html-to-image'
 import { jsPDF } from 'jspdf'
 import { X, ImageSquare, FilePdf } from '@phosphor-icons/react'
-import { formatTime } from '../lib/utils'
+import { useCenter } from '../context/CenterContext'
+import { nextEvent } from '../../functions/time'
 
 const POSTER_W = 794
 const POSTER_H = 1123
@@ -18,11 +19,6 @@ const SATOSHI = "'Satoshi', sans-serif"
 const ML_SERIF = "'Noto Serif Malayalam', serif"
 const ML_SANS = "'Noto Sans Malayalam', sans-serif"
 
-const BRAND = {
-  en: { top1: 'SALAFI CENTER', top2: 'CHERUKUNNU', bottom1: 'SALAFI CENTER', bottom2: 'CHERUKUNNU' },
-  ml: { top1: 'സലഫി സെന്റർ', top2: 'ചെറുകുന്ന്', bottom1: 'സലഫി സെന്റർ', bottom2: 'ചെറുകുന്ന്' },
-}
-
 function slugify(text) {
   return (
     (text || 'event')
@@ -33,17 +29,26 @@ function slugify(text) {
   )
 }
 
-function eventDateParts(eventAt) {
+function eventDateParts(eventAt, timezone) {
   const d = new Date(eventAt)
   if (Number.isNaN(d.getTime())) return null
   return {
     date: d,
-    weekdayLong: d.toLocaleDateString('en-IN', { weekday: 'long' }),
-    weekdayMl: d.toLocaleDateString('ml-IN', { weekday: 'short' }),
-    monthLong: d.toLocaleDateString('en-IN', { month: 'long' }),
-    monthMl: d.toLocaleDateString('ml-IN', { month: 'long' }),
-    day: d.getDate(),
-    year: d.getFullYear(),
+    weekdayLong: d.toLocaleDateString('en', {
+      weekday: 'long',
+      timeZone: timezone,
+    }),
+    weekdayMl: d.toLocaleDateString('ml', {
+      weekday: 'short',
+      timeZone: timezone,
+    }),
+    monthLong: d.toLocaleDateString('en', {
+      month: 'long',
+      timeZone: timezone,
+    }),
+    monthMl: d.toLocaleDateString('ml', { month: 'long', timeZone: timezone }),
+    day: d.toLocaleDateString('en', { day: 'numeric', timeZone: timezone }),
+    year: d.toLocaleDateString('en', { year: 'numeric', timeZone: timezone }),
   }
 }
 
@@ -66,7 +71,8 @@ function fitTitleLines(title, isMl) {
   for (let size = maxSize; size >= minSize; size -= 4) {
     const m = probe(size)
     if (words.length === 1) {
-      if (m(fmt(words[0])) <= TITLE_MAX_W) return { size, lines: [fmt(words[0])] }
+      if (m(fmt(words[0])) <= TITLE_MAX_W)
+        return { size, lines: [fmt(words[0])] }
       continue
     }
     let best = null
@@ -87,7 +93,11 @@ function fitTitleLines(title, isMl) {
       const l1 = line(words.slice(0, i))
       const l2 = line(words.slice(i, j))
       const l3 = line(words.slice(j))
-      if (m(l1) <= TITLE_MAX_W && m(l2) <= TITLE_MAX_W && m(l3) <= TITLE_MAX_W) {
+      if (
+        m(l1) <= TITLE_MAX_W &&
+        m(l2) <= TITLE_MAX_W &&
+        m(l3) <= TITLE_MAX_W
+      ) {
         const d = Math.abs(m(l1) - m(l2)) + Math.abs(m(l2) - m(l3))
         if (!best || d < best.d) best = { lines: [l1, l2, l3] }
       }
@@ -165,7 +175,9 @@ async function deliverFile(blob, filename) {
       if (navigator.canShare({ files: [file] })) {
         await Promise.race([
           navigator.share({ files: [file], title: filename }),
-          new Promise((_, reject) => setTimeout(() => reject(new Error('share-timeout')), 3000)),
+          new Promise((_, reject) =>
+            setTimeout(() => reject(new Error('share-timeout')), 3000),
+          ),
         ])
         shared = true
       }
@@ -203,6 +215,7 @@ function useFitScale(containerRef, baseWidth) {
 }
 
 export default function PosterModal({ event, onClose }) {
+  const { center } = useCenter()
   const posterRef = useRef(null)
   const previewRef = useRef(null)
   const scale = useFitScale(previewRef, POSTER_W)
@@ -219,11 +232,22 @@ export default function PosterModal({ event, onClose }) {
   }, [onClose])
 
   const isMl = lang === 'ml'
-  const parts = eventDateParts(event.eventAt)
-  const title = (isMl && event.titleMl ? event.titleMl : event.title) || event.title || ''
+  const occurrence = nextEvent(event)
+  const parts = eventDateParts(occurrence, center.timezone)
+  const title =
+    (isMl && event.titleMl ? event.titleMl : event.title) || event.title || ''
   const fit = useMemo(() => fitTitleLines(title, isMl), [title, isMl])
-  const brand = BRAND[lang]
-  const timeLine = formatTime(event.eventAt)
+  const brand = {
+    top1: center.displayName,
+    top2: center.city,
+    bottom1: center.displayName,
+    bottom2: center.city,
+  }
+  const timeLine = new Date(occurrence).toLocaleTimeString(center.locale, {
+    timeZone: center.timezone,
+    hour: 'numeric',
+    minute: '2-digit',
+  })
   const hasTime = timeLine !== '—'
 
   const isSameDay =
@@ -252,14 +276,14 @@ export default function PosterModal({ event, onClose }) {
     setError('')
     try {
       const timeout = new Promise((_, reject) =>
-        setTimeout(() => reject(new Error('timeout')), 30000)
+        setTimeout(() => reject(new Error('timeout')), 30000),
       )
       await Promise.race([timeout, runCapture(kind, node)])
     } catch (err) {
       setError(
         err?.message === 'timeout'
           ? 'Poster generation took too long. Please try again.'
-          : 'Could not generate the poster. Please try again.'
+          : 'Could not generate the poster. Please try again.',
       )
     } finally {
       setBusy('')
@@ -271,8 +295,11 @@ export default function PosterModal({ event, onClose }) {
     let fontEmbedCSS = ''
     try {
       fontEmbedCSS = await fetch(
-        'https://fonts.googleapis.com/css2?family=Noto+Serif+Malayalam:wght@500;600;700&family=Noto+Sans+Malayalam:wght@400;600&display=swap'
-      ).then((r) => r.text())
+        'https://fonts.googleapis.com/css2?family=Noto+Serif+Malayalam:wght@500;600;700&family=Noto+Sans+Malayalam:wght@400;600&display=swap',
+      ).then((r) => {
+        if (!r.ok) throw new Error('Font unavailable')
+        return r.text()
+      })
     } catch {}
     const opts = { pixelRatio: 2, cacheBust: true, fontEmbedCSS }
     const slug = slugify(event.title)
@@ -282,7 +309,11 @@ export default function PosterModal({ event, onClose }) {
       await deliverFile(blob, filename)
     } else {
       const canvas = await toCanvas(node, opts)
-      const pdf = new jsPDF({ orientation: 'portrait', unit: 'pt', format: 'a4' })
+      const pdf = new jsPDF({
+        orientation: 'portrait',
+        unit: 'pt',
+        format: 'a4',
+      })
       const w = canvas.width
       const h = canvas.height
       const pageW = pdf.internal.pageSize.getWidth()
@@ -292,7 +323,7 @@ export default function PosterModal({ event, onClose }) {
         0,
         0,
         pageW,
-        (pageW * h) / w
+        (pageW * h) / w,
       )
       await deliverFile(pdf.output('blob'), filename)
     }
@@ -375,7 +406,12 @@ export default function PosterModal({ event, onClose }) {
             className="mx-auto"
             style={{ width: POSTER_W * scale, height: POSTER_H * scale }}
           >
-            <div style={{ transform: `scale(${scale})`, transformOrigin: 'top left' }}>
+            <div
+              style={{
+                transform: `scale(${scale})`,
+                transformOrigin: 'top left',
+              }}
+            >
               <div
                 ref={posterRef}
                 className="relative overflow-hidden"

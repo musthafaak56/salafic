@@ -6,6 +6,8 @@ import {
   HighLatitudeRule,
 } from 'adhan'
 import { DEFAULT_PRAYER, PRAYERS } from '../../functions/domain.js'
+import { zonedInstant } from '../../functions/time.js'
+export { zonedInstant } from '../../functions/time.js'
 
 export function localDate(timezone, date = new Date()) {
   const parts = new Intl.DateTimeFormat('en-CA', {
@@ -22,35 +24,6 @@ export function shiftDate(date, days) {
   const d = new Date(`${date}T12:00:00Z`)
   d.setUTCDate(d.getUTCDate() + days)
   return d.toISOString().slice(0, 10)
-}
-export function zonedInstant(date, time, timezone) {
-  const desired = Date.parse(`${date}T${time}:00Z`)
-  if (!Number.isFinite(desired)) throw new Error('Enter a valid date and time.')
-  let result = desired
-  const fmt = new Intl.DateTimeFormat('en-GB', {
-    timeZone: timezone,
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-    hourCycle: 'h23',
-  })
-  for (let i = 0; i < 4; i++) {
-    const p = Object.fromEntries(
-      fmt.formatToParts(new Date(result)).map((p) => [p.type, p.value]),
-    )
-    const shown = Date.parse(
-      `${p.year}-${p.month}-${p.day}T${p.hour}:${p.minute}:${p.second}Z`,
-    )
-    const delta = desired - shown
-    if (!delta) return new Date(result).toISOString()
-    result += delta
-  }
-  throw new Error(
-    'This local time does not exist during the daylight-saving change. Choose another time.',
-  )
 }
 export function calculateSchedule(
   center,
@@ -82,7 +55,9 @@ export function calculateSchedule(
         ).toISOString()
     return {
       key,
-      base: base[key].toISOString(),
+      base: Number.isFinite(base[key].getTime())
+        ? base[key].toISOString()
+        : null,
       offset: manualTime ? 0 : offset,
       at,
       iqama,
@@ -95,7 +70,9 @@ export function calculateSchedule(
       ? 'Published timetable'
       : 'Calculated for this center · local adjustments applied',
     prayers,
-    sunrise: base.sunrise.toISOString(),
+    sunrise: Number.isFinite(base.sunrise.getTime())
+      ? base.sunrise.toISOString()
+      : null,
     jumuah: config.jumuah || [],
   }
 }
@@ -108,9 +85,20 @@ export function nextPrayer(schedules, now = Date.now()) {
   )
 }
 export function timeLabel(iso, center) {
+  if (!iso || !Number.isFinite(Date.parse(iso))) return '—'
   return new Intl.DateTimeFormat(center.locale || 'en', {
     timeZone: center.timezone,
     hour: 'numeric',
     minute: '2-digit',
+    hour12: center.timeFormat !== '24',
   }).format(new Date(iso))
+}
+
+export function hijriDate(center, now = Date.now()) {
+  return new Intl.DateTimeFormat(`${center.locale || 'en'}-u-ca-islamic`, {
+    timeZone: center.timezone,
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
+  }).format(new Date(now + (center.hijriAdjustment || 0) * 86400000))
 }

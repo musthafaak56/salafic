@@ -46,8 +46,11 @@ service cloud.firestore {
       match /publicFinance/{doc} { allow read: if published(id) || finance(id); }
       match /publicTransactions/{doc} { allow read: if published(id) || finance(id); }
       match /announcements/{doc} { allow read: if published(id) || editor(id); }
+      match /announcementArchive/{doc} { allow read: if editor(id); }
       match /events/{doc} { allow read: if published(id) || editor(id); }
       match /forms/{doc} { allow read: if published(id) || editor(id); }
+      match /eventDrafts/{doc} { allow read: if editor(id); }
+      match /formDrafts/{doc} { allow read: if editor(id); }
       match /funds/{doc} { allow read: if finance(id); }
       match /expenses/{doc} { allow read: if finance(id); }
       match /financeState/{doc} { allow read: if finance(id); }

@@ -1,31 +1,46 @@
 import { useCenter } from '../../context/CenterContext'
 import { useState } from 'react'
-import { addEvent, updateEvent } from '../../lib/firestore'
+import { act } from '../../lib/platform'
 import { useAuth } from '../../context/AuthContext'
 import Button from '../../components/Button'
 import Field, { inputClass } from '../../components/Field'
-
-const today = () => new Date().toISOString().slice(0, 10)
+import { localDate } from '../../lib/centerPrayer'
 
 export default function EventForm({ onSaved, onCancel, initial }) {
-  const { centerId } = useCenter()
+  const { centerId, center } = useCenter()
   const { profile } = useAuth()
   const editing = Boolean(initial?.id)
   const [title, setTitle] = useState(initial?.title ?? '')
   const [titleMl, setTitleMl] = useState(initial?.titleMl ?? '')
-  const [date, setDate] = useState(initial?.eventAt?.slice(0, 10) ?? today())
-  const [time, setTime] = useState(initial?.eventAt?.slice(11, 16) ?? '')
-  const [repeat, setRepeat] = useState(initial?.repeat === 'weekly' ? 'weekly' : 'once')
+  const [date, setDate] = useState(
+    () =>
+      (initial?.eventLocal || initial?.eventAt)?.slice(0, 10) ??
+      localDate(center.timezone),
+  )
+  const [time, setTime] = useState(
+    () => (initial?.eventLocal || initial?.eventAt)?.slice(11, 16) ?? '',
+  )
+  const [repeat, setRepeat] = useState(
+    initial?.repeat === 'weekly' ? 'weekly' : 'once',
+  )
   const [location, setLocation] = useState(initial?.location ?? '')
   const [description, setDescription] = useState(initial?.description ?? '')
-  const [descriptionMl, setDescriptionMl] = useState(initial?.descriptionMl ?? '')
+  const [descriptionMl, setDescriptionMl] = useState(
+    initial?.descriptionMl ?? '',
+  )
   const [success, setSuccess] = useState(false)
   const [error, setError] = useState('')
   const [saving, setSaving] = useState(false)
+  const [draft, setDraft] = useState(null)
+  const [draftId] = useState(() => initial?.id || crypto.randomUUID())
+  const [version, setVersion] = useState(initial?.version || 0)
 
-  const repeatWeekday = repeat === 'weekly' && date
-    ? new Date(`${date}T00:00`).toLocaleDateString('en-IN', { weekday: 'long' })
-    : ''
+  const repeatWeekday =
+    repeat === 'weekly' && date
+      ? new Date(`${date}T00:00`).toLocaleDateString('en-IN', {
+          weekday: 'long',
+        })
+      : ''
 
   async function handleSubmit(e) {
     e.preventDefault()
@@ -44,19 +59,15 @@ export default function EventForm({ onSaved, onCancel, initial }) {
       byName: profile?.name,
     }
     try {
-      if (editing) {
-        await updateEvent(centerId, initial.id, data)
-      } else {
-        await addEvent(centerId, data)
-        setTitle('')
-        setTitleMl('')
-        setTime('')
-        setLocation('')
-        setDescription('')
-        setDescriptionMl('')
-      }
-      setSuccess(true)
-      onSaved?.()
+      const saved = await act('contentWrite', {
+        centerId,
+        collection: 'events',
+        id: draftId,
+        payload: data,
+        draft: true,
+        version,
+      })
+      setDraft({ ...data, token: saved.token })
     } catch (err) {
       setError(err.message)
     } finally {
@@ -66,7 +77,11 @@ export default function EventForm({ onSaved, onCancel, initial }) {
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4" noValidate>
-      <Field label="Title" htmlFor="event-title" hint="e.g. Weekly Qur'an class for children.">
+      <Field
+        label="Title"
+        htmlFor="event-title"
+        hint="e.g. Weekly Qur'an class for children."
+      >
         <input
           id="event-title"
           type="text"
@@ -105,7 +120,7 @@ export default function EventForm({ onSaved, onCancel, initial }) {
           />
         </Field>
         <Field
-          label="Time"
+          label={`Time (${center.timezone})`}
           htmlFor="event-time"
           hint="Leave empty for whole-day events."
         >
@@ -183,18 +198,24 @@ export default function EventForm({ onSaved, onCancel, initial }) {
         />
       </Field>
       {error ? (
-        <p className="rounded-lg border border-negative/30 bg-negative/10 p-3 text-sm text-negative" role="alert">
+        <p
+          className="rounded-lg border border-negative/30 bg-negative/10 p-3 text-sm text-negative"
+          role="alert"
+        >
           {error}
         </p>
       ) : null}
       {success ? (
-        <p className="rounded-lg border border-positive/30 bg-positive/10 p-3 text-sm text-positive" role="status">
+        <p
+          className="rounded-lg border border-positive/30 bg-positive/10 p-3 text-sm text-positive"
+          role="status"
+        >
           {editing ? 'Event updated.' : 'Event created.'}
         </p>
       ) : null}
       <div className="flex items-center gap-3">
         <Button type="submit" loading={saving}>
-          {saving ? 'Saving…' : editing ? 'Save changes' : 'Create event'}
+          {saving ? 'Saving…' : 'Save draft & preview'}
         </Button>
         {editing ? (
           <Button type="button" variant="ghost" onClick={() => onCancel?.()}>
@@ -202,6 +223,43 @@ export default function EventForm({ onSaved, onCancel, initial }) {
           </Button>
         ) : null}
       </div>
+      {draft && (
+        <section className="publication-preview">
+          <p className="eyebrow">Private preview · {center.displayName}</p>
+          <h2>{draft.title}</h2>
+          <p>{draft.description}</p>
+          <p>
+            {draft.eventAt} · {center.timezone} · {draft.location}
+          </p>
+          <Button
+            type="button"
+            loading={saving}
+            onClick={async () => {
+              setSaving(true)
+              setError('')
+              try {
+                await act('contentWrite', {
+                  centerId,
+                  collection: 'events',
+                  id: draftId,
+                  publish: true,
+                  token: draft.token,
+                })
+                setVersion(version + 1)
+                setDraft(null)
+                setSuccess(true)
+                onSaved?.()
+              } catch (err) {
+                setError(err.message)
+              } finally {
+                setSaving(false)
+              }
+            }}
+          >
+            Publish reviewed event
+          </Button>
+        </section>
+      )}
     </form>
   )
 }

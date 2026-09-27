@@ -80,6 +80,17 @@ export function centerFields(data) {
     timezone,
     currency,
     locale,
+    timeFormat: data.timeFormat === '24' ? '24' : '12',
+    hijriAdjustment:
+      Number.isInteger(Number(data.hijriAdjustment || 0)) &&
+      Math.abs(Number(data.hijriAdjustment || 0)) <= 2
+        ? Number(data.hijriAdjustment || 0)
+        : 0,
+    modules: {
+      finances: data.modules?.finances !== false,
+      events: data.modules?.events !== false,
+      forms: data.modules?.forms !== false,
+    },
     description: text(data.description || '', 1000, false),
     ...publicLinks,
     contactEmail: data.contactEmail ? email(data.contactEmail) : '',

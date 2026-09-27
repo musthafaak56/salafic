@@ -1,5 +1,30 @@
 @import "tailwindcss";
 
+.center-cover { width: 100%; max-height: 320px; object-fit: cover; border-radius: 16px; margin-block-end: 24px; }
+.center-logo { width: 80px; height: 80px; object-fit: contain; margin-block-end: 24px; }
+.prayer-poster-dialog { max-width: 760px; width: calc(100% - 32px); max-height: 90vh; margin: auto; padding: 24px; overflow: auto; background: var(--t-surface); color: var(--t-ink); border: 1px solid var(--t-line); border-radius: 12px; }
+.prayer-poster-dialog::backdrop { background: #0008; }
+.prayer-poster-artwork { font-family: Arial, sans-serif; padding: 32px; margin-block: 24px; background: white; color: #132139; --t-surface: white; --t-ink: #132139; --t-ink-secondary: #536279; --t-primary: #255dc5; --t-primary-soft: #edf3ff; --t-line: #dce4ee; }
+.prayer-poster-artwork h1 { font-size: 32px; margin-block-end: 24px; font-weight: 650; }
+.language-select { max-width: 120px; min-height: 40px; background: var(--t-surface); color: var(--t-ink); border: 1px solid var(--t-line); border-radius: 8px; padding-inline: 8px; }
+.preview-mobile { max-width: 360px; margin-inline: auto; margin-block: 24px; }
+.preview-mobile .platform-row { flex-direction: column; align-items: start; }
+.preview-mobile .prayer-board { padding: 16px; }
+.preview-mobile .finance-stats { grid-template-columns: 1fr; }
+.preview-tv { margin-block: 24px; font-size: 24px; }
+.preview-tv .prayer-table strong { font-size: 26px; }
+@media (min-width: 1000px) {
+  .center-tv-content:has(.announcement) { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); gap: 24px; align-items: start; }
+  .center-tv-content > .platform-message, .center-tv-content > .platform-error { grid-column: 1 / -1; }
+}
+@media print {
+  .platform-header, .platform-footer, .platform-page button, .platform-page input, .platform-page .platform-field { display: none !important; }
+  .platform-page { max-width: none; padding: 0; }
+  table { break-inside: auto; }
+  tr { break-inside: avoid; }
+  thead { display: table-header-group; }
+}
+
 .platform-header { border-bottom: 1px solid var(--t-line); background: var(--t-surface); }
 .platform-nav { max-width: 1200px; margin: auto; min-height: 88px; padding: 16px 32px; display: flex; align-items: center; gap: 32px; }
 .platform-brand { font-size: 26px; font-weight: 750; letter-spacing: -.05em; }

@@ -27,6 +27,21 @@ import Button from '../components/Button'
 export function CenterAdminLayout() {
   const { center, base } = useCenter(),
     { profile } = useAuth()
+  const [access, setAccess] = useState({ loading: true })
+  useEffect(() => {
+    let active = true
+    setAccess({ loading: true })
+    act('auditCenterAccess', { centerId: center.id })
+      .then(() => {
+        if (active) setAccess({ allowed: true })
+      })
+      .catch((error) => {
+        if (active) setAccess({ error: error.message })
+      })
+    return () => {
+      active = false
+    }
+  }, [center.id, profile?.role])
   const role =
     profile?.role === 'superadmin'
       ? 'owner'
@@ -79,7 +94,13 @@ export function CenterAdminLayout() {
           />
         )}
       </div>
-      <Outlet key={center.id} />
+      {access.loading ? (
+        <p role="status">Opening center administration…</p>
+      ) : access.error ? (
+        <Message error>{access.error}</Message>
+      ) : (
+        <Outlet key={center.id} />
+      )}
     </Shell>
   )
 }
@@ -118,18 +139,15 @@ export function CenterSettings() {
       <form
         onSubmit={(e) => {
           e.preventDefault()
-          action.run(
-            async () => {
-              await act('settings', {
-                centerId,
-                fields,
-                published,
-                version: fields.version,
-              })
-              setFields({...fields, version: fields.version + 1})
-            },
-            'Center settings saved.',
-          )
+          action.run(async () => {
+            await act('settings', {
+              centerId,
+              fields,
+              published,
+              version: fields.version,
+            })
+            setFields({ ...fields, version: fields.version + 1 })
+          }, 'Center settings saved.')
         }}
       >
         <CenterFields value={fields} onChange={setFields} currencyLocked />
@@ -181,6 +199,7 @@ export function Publishing({
   const { centerId, center } = useCenter(),
     action = useAction(),
     [draft, setDraft] = useState(null),
+    [previewMode, setPreviewMode] = useState('desktop'),
     revisions = useAdminRecords('contentRevisions')
   async function loadDraft() {
     setDraft(await record(centerId, 'contentDrafts', `${kind}-${id}`))
@@ -191,6 +210,19 @@ export function Publishing({
   const history = revisions.items
     .filter((r) => r.kind === kind && r.targetId === id)
     .sort((a, b) => b.version - a.version)
+  let previewContent = null
+  if (draft) {
+    try {
+      previewContent = children(draft.payload)
+    } catch (error) {
+      previewContent = (
+        <Message error>
+          {error.message ||
+            'This draft cannot be previewed. Check its settings and save it again.'}
+        </Message>
+      )
+    }
+  }
   return (
     <>
       <div className="platform-links">
@@ -211,13 +243,19 @@ export function Publishing({
       {draft && (
         <section className="publication-preview">
           <p className="eyebrow">Private preview · {center.displayName}</p>
-          {children(draft.payload)}
+          <Input
+            label="Preview layout"
+            value={previewMode}
+            onChange={setPreviewMode}
+            options={['desktop', 'mobile', 'tv']}
+          />
+          <div className={`preview-${previewMode}`}>{previewContent}</div>
           <Button
             type="button"
             loading={action.busy}
             onClick={() =>
               action.run(async () => {
-                await act('publish', { centerId, kind, id })
+                await act('publish', { centerId, kind, id, token: draft.token })
                 setDraft(null)
                 await revisions.reload()
                 await onPublished?.()
@@ -272,7 +310,8 @@ export function Publishing({
 
 export function CenterPrayers() {
   const { center } = useCenter(),
-    [config, setConfig] = useState(center.prayer || DEFAULT_PRAYER)
+    [config, setConfig] = useState(center.prayer || DEFAULT_PRAYER),
+    [version, setVersion] = useState(center.prayerVersion || 0)
   let preview = null,
     error = ''
   try {
@@ -386,7 +425,12 @@ export function CenterPrayers() {
         kind="prayer"
         id="prayer"
         payload={config}
-        version={center.prayerVersion || 0}
+        version={version}
+        onPublished={async () => {
+          const latest = await record(center.id)
+          setConfig(latest.prayer)
+          setVersion(latest.prayerVersion || 0)
+        }}
       >
         {(draft) => (
           <PrayerBoard
@@ -402,8 +446,8 @@ export function CenterPrayers() {
 
 export function CenterAnnouncements() {
   const { center } = useCenter(),
-    notices = useAdminRecords('announcements'),
-    [selected, setSelected] = useState(null)
+    notices = useAdminRecords('announcements')
+  const archived = useAdminRecords('announcementArchive')
   const fresh = () => ({
     id: crypto.randomUUID(),
     title: '',
@@ -417,7 +461,16 @@ export function CenterAnnouncements() {
   const [form, setForm] = useState(fresh),
     action = useAction()
   function edit(n) {
-    setSelected(n.id)
+    if (Date.parse(n.expiresAt) <= Date.now()) {
+      setForm({
+        ...fresh(),
+        title: n.title,
+        message: n.message,
+        priority: n.priority,
+        surfaces: n.surfaces,
+      })
+      return
+    }
     setForm({
       ...n,
       startsAt: new Intl.DateTimeFormat('sv-SE', {
@@ -454,7 +507,6 @@ export function CenterAnnouncements() {
           variant="outline"
           onClick={() => {
             setForm(fresh())
-            setSelected(null)
           }}
         >
           New announcement
@@ -522,8 +574,7 @@ export function CenterAnnouncements() {
           id={form.id}
           payload={payload}
           version={
-            notices.items.find((n) => n.id === selected)?.version ||
-            form.version
+            notices.items.find((n) => n.id === form.id)?.version || form.version
           }
           onPublished={notices.reload}
         >
@@ -545,7 +596,7 @@ export function CenterAnnouncements() {
       )}
       {action.feedback}
       <h3 className="mt-8">Published notices</h3>
-      {notices.items.map((n) => (
+      {[...notices.items, ...archived.items].map((n) => (
         <div className="platform-row" key={n.id}>
           <p>
             {n.title}
@@ -571,7 +622,7 @@ export function CenterFinances() {
     [ledger, setLedger] = useState([]),
     [state, setState] = useState(null),
     [report, setReport] = useState(null)
-  const [opening,setOpening] = useState('0')
+  const [opening, setOpening] = useState('0')
   const [form, setForm] = useState({
     kind: 'funds',
     amount: '',
@@ -602,12 +653,48 @@ export function CenterFinances() {
   return (
     <section className="platform-section">
       <h2>Private financial records</h2>
+      <Button
+        variant="outline"
+        loading={action.busy}
+        onClick={() =>
+          action.run(async () => {
+            await act('reconcileFinance', { centerId })
+            await reload()
+          }, 'Totals reconciled from every ledger entry. Preview and publish the updated report when ready.')
+        }
+      >
+        Reconcile ledger totals
+      </Button>
       <p>
         Record donations and expenses here. Internal notes stay private. Publish
         a reviewed summary separately.
       </p>
       {action.feedback}
-      {!state && <form className="platform-links" onSubmit={e=>{e.preventDefault();action.run(async()=>{await act('openingBalance',{centerId,amount:opening});await reload()},'Opening balance saved.')}}><Input label={`Opening balance (${center.currency})`} value={opening} onChange={setOpening} inputMode="decimal"/><Button loading={action.busy} type="submit" variant="outline">Set opening balance</Button><p className="platform-hint">Optional. This becomes fixed once the ledger is started.</p></form>}
+      {!state && (
+        <form
+          className="platform-links"
+          onSubmit={(e) => {
+            e.preventDefault()
+            action.run(async () => {
+              await act('openingBalance', { centerId, amount: opening })
+              await reload()
+            }, 'Opening balance saved.')
+          }}
+        >
+          <Input
+            label={`Opening balance (${center.currency})`}
+            value={opening}
+            onChange={setOpening}
+            inputMode="decimal"
+          />
+          <Button loading={action.busy} type="submit" variant="outline">
+            Set opening balance
+          </Button>
+          <p className="platform-hint">
+            Optional. This becomes fixed once the ledger is started.
+          </p>
+        </form>
+      )}
       <form
         onSubmit={(e) => {
           e.preventDefault()
@@ -694,10 +781,29 @@ export function CenterFinances() {
                   currency: center.currency,
                 }).format(e.amount || 0)}
           </strong>
-          {!e.reverses && !e.reversedAt && <Button variant="ghost" loading={action.busy} onClick={()=>{
-            const reason=window.prompt('Reason for reversing this entry (the original is retained):')
-            if(reason?.trim())action.run(async()=>{await act('reverseEntry',{centerId,kind:e.kind==='Donation'?'funds':'expenses',id:e.id,reason});await reload()},'Correction recorded. Publish a new summary to update public totals.')
-          }}>Reverse entry</Button>}
+          {!e.reverses && !e.reversedAt && (
+            <Button
+              variant="ghost"
+              loading={action.busy}
+              onClick={() => {
+                const reason = window.prompt(
+                  'Reason for reversing this entry (the original is retained):',
+                )
+                if (reason?.trim())
+                  action.run(async () => {
+                    await act('reverseEntry', {
+                      centerId,
+                      kind: e.kind === 'Donation' ? 'funds' : 'expenses',
+                      id: e.id,
+                      reason,
+                    })
+                    await reload()
+                  }, 'Correction recorded. Publish a new summary to update public totals.')
+              }}
+            >
+              Reverse entry
+            </Button>
+          )}
           {e.reversedAt && <span className="status-chip">Reversed</span>}
         </div>
       ))}
@@ -706,6 +812,7 @@ export function CenterFinances() {
 }
 
 export function CenterTeam() {
+  const { refreshAccess } = useAuth()
   const { centerId } = useCenter(),
     members = useAdminRecords('members'),
     action = useAction(),
@@ -754,6 +861,21 @@ export function CenterTeam() {
             {m.email} · {m.role}
           </p>
           {m.role !== 'owner' && (
+            <Input
+              label={`Role for ${m.email}`}
+              value={m.role}
+              options={['admin', 'finance', 'editor']}
+              disabled={action.busy}
+              onChange={(role) =>
+                action.run(async () => {
+                  await act('changeMemberRole', { centerId, uid: m.id, role })
+                  await members.reload()
+                  await refreshAccess()
+                }, 'Role updated.')
+              }
+            />
+          )}
+          {m.role !== 'owner' && (
             <Button
               variant="outline"
               loading={action.busy}
@@ -768,9 +890,26 @@ export function CenterTeam() {
               Remove access
             </Button>
           )}
-          {m.role !== 'owner' && <Button variant="ghost" loading={action.busy} onClick={()=>{
-            if(window.confirm(`Transfer center ownership to ${m.email}? Your own access will become administrator.`))action.run(async()=>{await act('transferOwnership',{centerId,uid:m.id});await members.reload()},'Ownership transferred. Refresh your session to update navigation.')
-          }}>Make owner</Button>}
+          {m.role !== 'owner' && (
+            <Button
+              variant="ghost"
+              loading={action.busy}
+              onClick={() => {
+                if (
+                  window.confirm(
+                    `Transfer center ownership to ${m.email}? Your own access will become administrator.`,
+                  )
+                )
+                  action.run(async () => {
+                    await act('transferOwnership', { centerId, uid: m.id })
+                    await members.reload()
+                    await refreshAccess()
+                  }, 'Ownership transferred.')
+              }}
+            >
+              Make owner
+            </Button>
+          )}
         </div>
       ))}
     </section>

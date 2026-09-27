@@ -5,6 +5,8 @@ import {
   collection,
   query,
   limit,
+  where,
+  orderBy,
 } from 'firebase/firestore'
 import { centerDocument } from '../lib/platform'
 import { calculateSchedule, localDate, shiftDate } from '../lib/centerPrayer'
@@ -21,9 +23,11 @@ export default function useCenterPublic(center) {
     let active = true,
       timer,
       attempt = 0
+    let sequence = 0
     const key = `tv-public:${center.id}`
     const days = [date, shiftDate(date, 1)]
     async function refresh() {
+      const request = ++sequence
       clearTimeout(timer)
       try {
         const [finance, announcements, events, forms, ...manual] =
@@ -33,14 +37,25 @@ export default function useCenterPublic(center) {
             ),
             ...['announcements', 'events', 'forms'].map((name) =>
               getDocsFromServer(
-                query(collection(centerDocument(center.id), name), limit(100)),
+                query(
+                  collection(centerDocument(center.id), name),
+                  ...(name === 'announcements'
+                    ? [
+                        where('expiresAt', '>', new Date().toISOString()),
+                        orderBy('expiresAt'),
+                      ]
+                    : name === 'events'
+                      ? [orderBy('eventAt', 'desc')]
+                      : [orderBy('createdAt', 'desc')]),
+                  limit(100),
+                ),
               ),
             ),
             ...days.map((d) =>
               getDocFromServer(centerDocument(center.id, 'prayerTimes', d)),
             ),
           ])
-        if (!active) return
+        if (!active || request !== sequence) return
         const data = {
           centerId: center.id,
           savedAt: Date.now(),
@@ -63,7 +78,7 @@ export default function useCenterPublic(center) {
         setState({ ...data, offline: false })
         attempt = 0
       } catch (error) {
-        if (!active) return
+        if (!active || request !== sequence) return
         if (error.code === 'permission-denied') {
           try {
             localStorage.removeItem(key)
@@ -90,7 +105,7 @@ export default function useCenterPublic(center) {
         }
         attempt++
       }
-      if (active)
+      if (active && request === sequence)
         timer = setTimeout(
           refresh,
           attempt ? Math.min(60000, 2000 * 2 ** Math.min(attempt, 5)) : 60000,
@@ -108,11 +123,11 @@ export default function useCenterPublic(center) {
       window.removeEventListener('online', refresh)
       document.removeEventListener('visibilitychange', wake)
     }
-  }, [center.id, date, center.prayerVersion, center.version])
+  }, [center.id, date, center.prayerVersion, center.version, center.status])
   let schedules = [],
     scheduleError = ''
   try {
-    if (!state.offline || state.dates?.includes(date))
+    if (state.centerId === center.id && state.dates?.includes(date))
       schedules = [date, shiftDate(date, 1)]
         .filter((d) => !state.offline || state.dates?.includes(d))
         .map((d) => calculateSchedule(center, d, state.manual?.[d]))

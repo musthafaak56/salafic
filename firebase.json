@@ -24,6 +24,10 @@
     ],
     "rewrites": [
       {
+        "source": "/c/**",
+        "function": { "functionId": "centerPage", "region": "us-central1" }
+      },
+      {
         "source": "**",
         "destination": "/index.html"
       }
@@ -33,6 +37,13 @@
     "rules": "firestore.rules",
     "indexes": "firestore.indexes.json"
   },
-  "functions": [{ "source": "functions", "codebase": "platform", "runtime": "nodejs22" }],
-  "emulators": { "auth": { "port": 9099 }, "firestore": { "port": 8080 }, "functions": { "port": 5001 }, "singleProjectMode": true }
+  "functions": [
+    { "source": "functions", "codebase": "platform", "runtime": "nodejs22" }
+  ],
+  "emulators": {
+    "auth": { "port": 9099 },
+    "firestore": { "port": 8080 },
+    "functions": { "port": 5001 },
+    "singleProjectMode": true
+  }
 }

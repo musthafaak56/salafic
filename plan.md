@@ -8,6 +8,14 @@ Visitors can view prayer times, published donations, and published expenses with
 
 This is an implementation plan only. Production migration and deployment are separate execution steps.
 
+## Implementation status — 27 September 2026
+
+The main platform implementation and the remaining local feature work are now in the codebase: scoped public/admin pages, trusted request approval and team workflows, configurable center identity, prayer offsets/manual timetables/monthly printing/posters, private drafts and revision restoration, opening balances and audited ledger corrections/reconciliation, cumulative public report history, announcements/archival, offline TV caching, URL aliases and server-generated center metadata.
+
+Build, domain checks, backend workflows and access-rule tests have passed locally. Public browser checks use isolated demonstration centers. The launch checklist and exact verification limits are maintained in `docs/worldwide-rollout.md`.
+
+Do not mark the entire plan or all phase gates complete yet: full reviewed interface localization, target-device offline/download/accessibility acceptance, production configuration, trusted super-admin provisioning, Cherukunnu migration/reconciliation, staging pilots and deployment remain release work. No live data migration or deployment has been performed.
+
 ## Current codebase: reusable foundations and gaps
 
 | Area | Current behavior | Planned change |
