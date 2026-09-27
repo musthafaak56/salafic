@@ -6,6 +6,8 @@ Public directory and scoped center URLs, preferred-center navigation, request re
 
 ## Required production configuration (not performed automatically)
 
+Enable **Email/Password** in Firebase Authentication → Sign-in method before releasing the email registration flow. Keep Google available as an alternative. Configure authorized domains and verification/password-reset email templates for the deployed site. Verify real inbox delivery in staging. Account creation alone never grants management access: the email must be verified and then receive an approved membership or accept a matching invitation. Center notification emails additionally require the SMTP setup below.
+
 1. Back up the existing Firestore database. Record current ledger totals and staff assignments. Freeze legacy writes during migration/reconciliation.
 2. Use a staging Firebase project first. The existing project uses the `(default)` Standard database. The functions require a supported billing/runtime configuration.
 3. Install backend packages with `npm ci --prefix functions`. Configure `SMTP_HOST`, `SMTP_FROM`, and `SITE_URL` parameters; set `SMTP_USER` and `SMTP_PASSWORD` with Firebase secret management. No credentials belong in source control. Outbox rows remain private; failed messages retry up to eight times and then require operator review.

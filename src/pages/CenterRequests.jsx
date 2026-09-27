@@ -79,6 +79,17 @@ export default function CenterRequests({ review = false }) {
           : 'Provide your center’s location and the email of the person who will manage it.'
       }
     >
+      {!review && (
+        <section className="platform-section">
+          <h2>How registration works</h2>
+          <p>Send your center’s details and designated admin email to musthafaak56@gmail.com for review. Approval gives that email owner access; other emails do not gain access automatically.</p>
+          <p>After approval, sign in with the designated email, refresh access below, and accept any invitation shown here. Then open your dashboard. Use Team to invite sub-admins by email; they sign in with that same verified email and accept their invitation here.</p>
+          <div className="platform-links">
+            <Button variant="outline" loading={action.busy} onClick={() => action.run(() => refreshAccess(), 'Access refreshed. Check your centers and invitations below.')}>Refresh my access</Button>
+          </div>
+          {!!profile?.centers?.length && <div className="platform-links">{profile.centers.map((c) => <Link key={c.id} to={`/c/${c.slug}/admin`}>Manage {c.displayName} →</Link>)}</div>}
+        </section>
+      )}
       {accessError && (
         <Message error>
           {accessError} <button onClick={() => refreshAccess()}>Retry</button>
@@ -100,7 +111,7 @@ export default function CenterRequests({ review = false }) {
                   action.run(async () => {
                     await act('acceptInvitation', { id: i.id })
                     await refreshAccess()
-                  }, 'Invitation accepted. Your center is now listed on the home page.')
+                  }, 'Invitation accepted. Open your center dashboard above.')
                 }
               >
                 Accept invitation

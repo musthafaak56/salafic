@@ -821,6 +821,7 @@ export function CenterTeam() {
   return (
     <section className="platform-section">
       <h2>Center team</h2>
+      <p>Invite sub-admins using their email address. They must sign in with that verified email and accept the invitation under My requests. Access applies only to this center.</p>
       {action.feedback}
       {members.error && <Message error>{members.error}</Message>}
       <form

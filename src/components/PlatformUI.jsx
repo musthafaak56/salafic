@@ -64,7 +64,9 @@ export function PlatformHeader() {
         >
           <NavLink to="/centers">Find a center</NavLink>
           <NavLink to="/quran">Quran</NavLink>
+          {!user && <NavLink to="/register">Register a center</NavLink>}
           {user && <NavLink to="/onboarding">My requests</NavLink>}
+          {user && !!profile?.centers?.length && <NavLink to="/centers">My centers</NavLink>}
           {profile?.role === 'superadmin' && (
             <NavLink to="/platform">Review requests</NavLink>
           )}

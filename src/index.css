@@ -1,5 +1,14 @@
 @import "tailwindcss";
 
+.landing-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 20px; margin: 0 0 64px; }
+.landing-actions a { display: inline-flex; align-items: center; gap: 10px; white-space: normal; }
+.landing-secondary { color: var(--t-primary); padding: 12px 0; font-weight: 600; }
+.landing-registration > p { max-width: 65ch; color: var(--t-ink-secondary); }
+.registration-steps { list-style: decimal; padding-inline-start: 24px; margin: 32px 0; }
+.registration-steps li { padding-inline-start: 8px; margin-bottom: 24px; }
+.registration-steps li::marker { color: var(--t-primary); font-weight: 650; }
+.registration-steps p { max-width: 65ch; color: var(--t-ink-secondary); margin-top: 6px; }
+
 .center-cover { width: 100%; max-height: 320px; object-fit: cover; border-radius: 16px; margin-block-end: 24px; }
 .center-logo { width: 80px; height: 80px; object-fit: contain; margin-block-end: 24px; }
 .prayer-poster-dialog { max-width: 760px; width: calc(100% - 32px); max-height: 90vh; margin: auto; padding: 24px; overflow: auto; background: var(--t-surface); color: var(--t-ink); border: 1px solid var(--t-line); border-radius: 12px; }

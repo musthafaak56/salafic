@@ -17,6 +17,7 @@ import { lazy, Suspense } from 'react'
 const Quran = lazy(() => import('./pages/Quran'))
 import QhlsDocuments from './pages/QhlsDocuments'
 import Centers from './pages/Centers'
+import Home from './pages/Home'
 import CenterHome from './pages/CenterHome'
 import CenterRequests from './pages/CenterRequests'
 import {
@@ -46,6 +47,14 @@ function Access({ platform = false, children }) {
       </main>
     )
   if (!user) return <Navigate to="/login" state={{ from: location }} replace />
+  if (!user.emailVerified)
+    return (
+      <main className="platform-page">
+        <h1>Verify your email first</h1>
+        <p>Open the verification link in your inbox, then return to sign in before requesting or managing a center.</p>
+        <a className="platform-button" href="/login">Return to sign in</a>
+      </main>
+    )
   if (platform && profile?.role !== 'superadmin')
     return <Navigate to="/onboarding" replace />
   if (
@@ -77,7 +86,7 @@ export default function App() {
         <AuthProvider>
           <BrowserRouter>
             <Routes>
-              <Route path="/" element={<Centers />} />
+              <Route path="/" element={<Home />} />
               <Route path="/centers" element={<Centers />} />
               <Route path="/login" element={<Login />} />
               <Route path="/register" element={<Register />} />

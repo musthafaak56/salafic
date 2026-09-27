@@ -4,12 +4,8 @@ import { useAuth } from '../context/AuthContext'
 import AuthLayout from '../components/AuthLayout'
 import Button from '../components/Button'
 import { GoogleLogo } from '@phosphor-icons/react'
-
-const ROLE_PATHS = {
-  superadmin: '/platform',
-  admin: '/centers',
-  user: '/',
-}
+import EmailAuth from '../components/EmailAuth'
+import { accountDestination } from '../lib/accountAccess'
 
 function googleErrorMessage(code) {
   switch (code) {
@@ -33,15 +29,15 @@ export default function Login() {
   const location = useLocation()
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
+  const requested = location.state?.from?.pathname
+  const destination = requested?.startsWith('/') && !requested.startsWith('//') ? requested : undefined
 
   async function handleGoogle() {
     setError('')
     setBusy(true)
     try {
       const profileData = await loginWithGoogle()
-      const requested = location.state?.from?.pathname
-      const destination = requested?.startsWith('/') && !requested.startsWith('//') ? requested : ROLE_PATHS[profileData.role] || '/'
-      navigate(destination, { replace: true })
+      navigate(destination || accountDestination(profileData), { replace: true })
     } catch (err) {
       const message = googleErrorMessage(err?.code)
       if (message) setError(message)
@@ -53,7 +49,7 @@ export default function Login() {
   return (
     <AuthLayout
       title="Sign in"
-      subtitle="Use your Google account to sign in."
+      subtitle="Use the designated admin email or your staff invitation email. After approval, your center dashboard will be available."
       footer={
         <>
           Need an account?{' '}
@@ -64,6 +60,7 @@ export default function Login() {
       }
     >
       <div className="space-y-4">
+        <EmailAuth destination={destination} />
         <Button
           type="button"
           variant="outline"

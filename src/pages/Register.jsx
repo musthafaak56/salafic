@@ -4,12 +4,8 @@ import { useAuth } from '../context/AuthContext'
 import AuthLayout from '../components/AuthLayout'
 import Button from '../components/Button'
 import { GoogleLogo } from '@phosphor-icons/react'
-
-const ROLE_PATHS = {
-  superadmin: '/platform',
-  admin: '/centers',
-  user: '/onboarding',
-}
+import EmailAuth from '../components/EmailAuth'
+import { accountDestination } from '../lib/accountAccess'
 
 function googleErrorMessage(code) {
   switch (code) {
@@ -38,7 +34,7 @@ export default function Register() {
     setBusy(true)
     try {
       const profileData = await loginWithGoogle()
-      navigate(ROLE_PATHS[profileData.role] || '/', { replace: true })
+      navigate(accountDestination(profileData), { replace: true })
     } catch (err) {
       const message = googleErrorMessage(err?.code)
       if (message) setError(message)
@@ -49,8 +45,8 @@ export default function Register() {
 
   return (
     <AuthLayout
-      title="Create an account"
-      subtitle="Sign up with Google in one click — there is no password to remember."
+      title="Register your masjid or center"
+      subtitle="First create and verify your account. Next, send your center details and designated admin email for approval."
       footer={
         <>
           Already have an account?{' '}
@@ -60,6 +56,7 @@ export default function Register() {
         </>
       }
     >
+      <EmailAuth register />
       <Button
         type="button"
         variant="outline"
