@@ -20,6 +20,8 @@ import Centers from './pages/Centers'
 import Home from './pages/Home'
 import CenterHome from './pages/CenterHome'
 import CenterRequests from './pages/CenterRequests'
+import PlatformAdmin, { PlatformCenters } from './pages/PlatformAdmin'
+import CenterCommunity, { CommunityEditor } from './pages/CenterCommunity'
 import {
   CenterAdminLayout,
   CenterOverview,
@@ -117,15 +119,20 @@ export default function App() {
                 path="/platform"
                 element={
                   <Access platform>
-                    <CenterRequests review />
+                    <PlatformAdmin />
                   </Access>
                 }
-              />
+              >
+                <Route index element={<CenterRequests review embedded />} />
+                <Route path="centers" element={<PlatformCenters />} />
+              </Route>
               <Route path="/c/:slug" element={<CenterRoute />}>
                 <Route index element={<CenterHome />} />
                 <Route path="prayer-times" element={<CenterTimetable />} />
                 <Route path="finances" element={<CenterHome />} />
                 <Route path="events" element={<CenterHome />} />
+                <Route path="madrasa" element={<CenterCommunity kind="madrasa" />} />
+                <Route path="committee" element={<CenterCommunity kind="committee" />} />
                 <Route path="tv" element={<CenterHome tv />} />
                 <Route path="forms/:formId" element={<PublicForm />} />
                 <Route
@@ -138,6 +145,8 @@ export default function App() {
                 >
                   <Route index element={<CenterOverview />} />
                   <Route path="settings" element={<CenterSettings />} />
+                  <Route path="madrasa" element={<CommunityEditor key="madrasa" kind="madrasa" />} />
+                  <Route path="committee" element={<CommunityEditor key="committee" kind="committee" />} />
                   <Route
                     path="prayer-times"
                     element={

@@ -8,6 +8,8 @@ import { createHash } from 'node:crypto'
 import nodemailer from 'nodemailer'
 import { eventFields, zonedInstant } from './time.js'
 import { centerHtml } from './metadata.js'
+import { resolveMapLocation } from './mapsResolver.js'
+import { communityFields } from './community.js'
 import {
   SUPER_ADMIN_EMAIL,
   applicationFields,
@@ -193,8 +195,12 @@ export const platformAction = onCall({ maxInstances: 10 }, async (req) => {
           .map((d) => ({ id: d.id, ...d.data() })),
       }
     }
+    if (action === 'resolveLocation') {
+      return await resolveMapLocation(data.mapsUrl)
+    }
     if (action === 'submitApplication') {
-      const fields = applicationFields(data.fields)
+      const location = await resolveMapLocation(data.fields?.mapsUrl)
+      const fields = applicationFields({ ...data.fields, ...location })
       const ref = db
         .collection('centerApplications')
         .doc(data.id ? validId(data.id) : db.collection('_').doc().id)
@@ -372,6 +378,18 @@ export const platformAction = onCall({ maxInstances: 10 }, async (req) => {
       return { ok: true }
     }
     const ref = centerRef(data.centerId)
+    if (action === 'saveCommunity') {
+      const fields = communityFields(data.kind, data.fields)
+      await db.runTransaction(async (tx) => {
+        await permissions(tx, user.uid, ref.id, data.kind === 'committee' ? 'team' : 'content')
+        const snap = await tx.get(ref)
+        if (!snap.exists) throw new Error('Center unavailable.')
+        checkVersion(snap.data().version, data.version)
+        tx.update(ref, { [data.kind]: fields, version: snap.data().version + 1, updatedAt: now() })
+        audit(tx, ref, user.uid, `${data.kind}.updated`)
+      })
+      return { ok: true }
+    }
     if (action === 'resendInitialInvitation') {
       await db.runTransaction(async (tx) => {
         await permissions(tx, user.uid)
@@ -757,7 +775,12 @@ export const platformAction = onCall({ maxInstances: 10 }, async (req) => {
       return { ok: true }
     }
     if (action === 'settings') {
-      const fields = centerFields(data.fields)
+      // Existing centers can keep their saved location without needing a new link.
+      const existing = await ref.get()
+      const location = data.fields?.mapsUrl
+        ? await resolveMapLocation(data.fields.mapsUrl)
+        : { latitude: existing.data()?.latitude, longitude: existing.data()?.longitude, timezone: existing.data()?.timezone }
+      const fields = centerFields({ ...data.fields, ...location })
       await db.runTransaction(async (tx) => {
         await permissions(tx, user.uid, ref.id, 'team')
         const snap = await tx.get(ref),

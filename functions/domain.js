@@ -1,3 +1,5 @@
+import { mapsUrl } from './maps.js'
+
 export const SUPER_ADMIN_EMAIL = 'musthafaak56@gmail.com'
 export const PRAYERS = ['fajr', 'dhuhr', 'asr', 'maghrib', 'isha']
 export const ROLES = ['owner', 'admin', 'finance', 'editor']
@@ -77,6 +79,7 @@ export function centerFields(data) {
     address: text(data.address, 300),
     latitude,
     longitude,
+    mapsUrl: data.mapsUrl ? mapsUrl(data.mapsUrl).href : '',
     timezone,
     currency,
     locale,

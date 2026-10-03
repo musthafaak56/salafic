@@ -190,6 +190,8 @@ export default function CenterHome({ tv = false }) {
         {[
           ['', t.overview],
           ['prayer-times', t.prayers],
+          ['madrasa', 'Madrasa'],
+          ['committee', 'Committee'],
           ['finances', t.finances],
           ['events', t.events],
         ].map(([path, label]) => (

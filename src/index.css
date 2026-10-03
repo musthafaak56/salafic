@@ -78,6 +78,37 @@
 .center-tabs { display: flex; flex-wrap: wrap; gap: 8px 24px; margin-bottom: 24px; }
 .center-tabs a { padding: 12px 0; font-size: 14px; border-bottom: 2px solid transparent; }
 .center-tabs a.active { border-color: var(--t-primary); }
+.dashboard-layout { display: grid; grid-template-columns: 224px minmax(0, 1fr); gap: 40px; max-width: 1360px; padding-top: 40px; }
+.dashboard-content { min-width: 0; }
+.dashboard-layout .platform-heading h1 { font-size: clamp(28px, 3vw, 40px); letter-spacing: -.03em; }
+.dashboard-sidebar { align-self: start; position: sticky; top: 24px; padding: 8px 20px 24px 0; border-inline-end: 1px solid var(--t-line); }
+.dashboard-nav-title { font-size: 14px; font-weight: 650; margin: 0 12px 20px; }
+.dashboard-nav-toggle { display: none; }
+.dashboard-nav { display: grid; gap: 4px; }
+.dashboard-nav a { display: flex; align-items: center; gap: 12px; min-height: 46px; padding: 10px 12px; border-radius: 8px; font-size: 14px; color: var(--t-ink-secondary); }
+.dashboard-nav a:hover { background: var(--t-surface-subtle); color: var(--t-ink); }
+.dashboard-nav a.active { background: var(--t-primary-soft); color: var(--t-primary); font-weight: 600; }
+.dashboard-nav svg { flex-shrink: 0; }
+.dashboard-account { font-size: 12px; line-height: 1.8; color: var(--t-ink-secondary); margin: 28px 12px 0; overflow-wrap: anywhere; }
+.dashboard-back { display: block; padding: 20px 12px; color: var(--t-primary); font-size: 14px; }
+.map-location-field { grid-column: 1/-1; padding: 20px 0; border-block: 1px solid var(--t-line); }
+.community-entry { padding: 20px 0; border-bottom: 1px solid var(--t-line); }
+.community-entry legend { font-weight: 600; padding-top: 20px; }
+.community-description { white-space: pre-wrap; max-width: 70ch; }
+.center-management-row h2 { font-size: 20px; margin-bottom: 8px; }
+.dashboard-layout a:focus-visible { outline: 2px solid var(--t-primary); outline-offset: 3px; }
+@media(max-width:800px) {
+  .dashboard-layout { grid-template-columns: minmax(0, 1fr); gap: 28px; }
+  .dashboard-sidebar { position: static; padding: 0 0 20px; border-inline-end: 0; border-bottom: 1px solid var(--t-line); }
+  .dashboard-nav { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .dashboard-nav:not(.is-open) { display: none; }
+  .dashboard-nav-heading { display: flex; justify-content: space-between; align-items: center; gap: 16px; }
+  .dashboard-nav-toggle { display: inline-flex; align-items: center; min-height: 44px; padding: 8px; color: var(--t-primary); font-size: 14px; }
+  .dashboard-nav-heading .dashboard-nav-title { margin-bottom: 0; }
+  .dashboard-nav-title { margin-inline-start: 0; }
+  .dashboard-account { display: none; }
+  .dashboard-layout .platform-heading { margin-bottom: 24px; }
+}
 .prayer-board { background: var(--t-surface); border: 1px solid var(--t-line); border-radius: 12px; padding: 32px; margin-bottom: 32px; }
 .next-prayer { text-align: end; }
 .next-prayer span { font-size: 13px; color: var(--t-ink-secondary); }

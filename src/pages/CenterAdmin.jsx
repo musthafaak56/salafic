@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Link, NavLink, Outlet } from 'react-router-dom'
+import { Link, Outlet } from 'react-router-dom'
 import { useCenter } from '../context/CenterContext'
 import { useAuth } from '../context/AuthContext'
 import { act, record, records } from '../lib/platform'
@@ -23,6 +23,7 @@ import {
   PrayerBoard,
 } from '../components/CenterPublicParts'
 import Button from '../components/Button'
+import DashboardNav from '../components/DashboardNav'
 
 export function CenterAdminLayout() {
   const { center, base } = useCenter(),
@@ -51,6 +52,7 @@ export function CenterAdminLayout() {
     ...(['owner', 'admin', 'editor'].includes(role)
       ? [
           ['prayer-times', 'Prayer times'],
+          ['madrasa', 'Madrasa'],
           ['announcements', 'Announcements'],
           ['events', 'Events'],
           ['forms', 'Forms'],
@@ -62,6 +64,7 @@ export function CenterAdminLayout() {
     ...(role === 'owner'
       ? [
           ['settings', 'Settings'],
+          ['committee', 'Committee'],
           ['team', 'Team'],
         ]
       : []),
@@ -71,15 +74,8 @@ export function CenterAdminLayout() {
       eyebrow={`Center administration · ${center.status}`}
       title={center.displayName}
       actions={<Link to={base}>View public page ↗</Link>}
-    >
-      <div className="platform-row">
-        <nav className="center-tabs" aria-label="Administration">
-          {tabs.map(([path, label]) => (
-            <NavLink key={path} end={!path} to={`${base}/admin/${path}`}>
-              {label}
-            </NavLink>
-          ))}
-        </nav>
+      sidebar={<DashboardNav title="Center management" links={tabs.map(([path, label]) => ({ to: `${base}/admin${path ? '/' + path : ''}`, label, icon: path || 'overview', end: !path }))}>
+        {profile?.role === 'superadmin' && <Link className="dashboard-back" to="/platform/centers">All centers</Link>}
         {profile?.centers?.length > 1 && (
           <Input
             label="Switch center"
@@ -93,7 +89,8 @@ export function CenterAdminLayout() {
             }))}
           />
         )}
-      </div>
+      </DashboardNav>}
+    >
       {access.loading ? (
         <p role="status">Opening center administration…</p>
       ) : access.error ? (
@@ -110,7 +107,7 @@ export function CenterOverview() {
     <section className="platform-section">
       <h2>Your community, in one place.</h2>
       <p>
-        Manage your center’s public information using the sections above. Prayer
+        Manage your center’s public information using the sidebar. Prayer
         times use the center’s location and saved minute adjustments.
       </p>
       <div className="platform-links">

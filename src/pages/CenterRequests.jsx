@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { Fragment, useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import {
   collection,
@@ -27,7 +27,8 @@ const labels = {
   approved: 'Approved',
   rejected: 'Rejected',
 }
-export default function CenterRequests({ review = false }) {
+export default function CenterRequests({ review = false, embedded = false }) {
+  const Wrapper = embedded ? Fragment : Shell
   const { user, profile, refreshAccess, accessError } = useAuth()
   const [items, setItems] = useState([]),
     [error, setError] = useState(''),
@@ -68,16 +69,14 @@ export default function CenterRequests({ review = false }) {
     )
   }, [user?.uid, review, filter, pageSize])
   return (
-    <Shell
-      eyebrow={
-        review ? 'Platform administration' : 'Bring your community together'
-      }
-      title={review ? 'Center requests' : 'Register your center'}
-      description={
+    <Wrapper {...(embedded ? {} : {
+      eyebrow: review ? 'Platform administration' : 'Bring your community together',
+      title: review ? 'Center requests' : 'Register your center',
+      description:
         review
           ? 'Review applications and assign access to the designated administrator.'
           : 'Provide your center’s location and the email of the person who will manage it.'
-      }
+      })}
     >
       {!review && (
         <section className="platform-section">
@@ -141,12 +140,10 @@ export default function CenterRequests({ review = false }) {
           >
             <CenterFields value={fields} onChange={setFields} request />
             <label className="platform-check">
-              <input type="checkbox" required />I have confirmed the center
-              coordinates and timezone.
+              <input type="checkbox" required />This Google Maps link points to the correct masjid or center.
             </label>
             <p className="platform-hint">
-              Confirm the timezone and coordinates of the center. Prayer times
-              will use this location. The designated administrator must verify
+              Prayer times will use the location and timezone from your map link. The designated administrator must verify
               their email before access is activated.
             </p>
             <Button loading={action.busy} type="submit">
@@ -224,7 +221,7 @@ export default function CenterRequests({ review = false }) {
           </Button>
         )}
       </section>
-    </Shell>
+    </Wrapper>
   )
 }
 function Request({
@@ -247,6 +244,7 @@ function Request({
         {item.city}, {item.countryCode} · {item.address}
       </p>
       <p>Admin: {item.designatedAdminEmail}</p>
+      {item.mapsUrl && <p><a href={item.mapsUrl} target="_blank" rel="noopener noreferrer">View center in Google Maps</a></p>}
       <p className="platform-hint">
         Submitted {new Date(item.createdAt).toLocaleString()} · {item.timezone}
       </p>

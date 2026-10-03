@@ -2,6 +2,10 @@
 
 ## Local implementation
 
+The administration screens now use sidebar navigation. `/platform` is the private registration review inbox; `/platform/centers` includes draft and published centers with links to each center’s management pages. Each center has public `/madrasa` and `/committee` pages and corresponding admin forms. Madrasa content is editable by owners, administrators and content editors; committee information is editable by owners and platform administrators. Committee membership is public information and never grants staff permissions. Saves are validated, version-checked and audited.
+
+New registrations use a Google Maps share link rather than latitude/longitude inputs. The backend resolves supported `maps.app.goo.gl`, `goo.gl/maps`, and Google Maps place/pin links, validates every redirect, extracts the selected pin and derives the timezone. It refuses camera-only or text-search links because those do not reliably identify a center. The remaining identity, contact, city/country and currency fields are still required. Existing centers retain their saved location unless a replacement map link is supplied. Prayer minute adjustments remain available.
+
 Public directory and scoped center URLs, preferred-center navigation, request review/status tracking and invitation renewal, verified-email invitations, server-owned roles, staff role changes and ownership transfer, location-based prayer calculations and signed offsets, manual timetables, monthly printing and prayer posters, private finance ledgers with opening balances/reversals/reconciliation, public report history, expiring announcements and private archives, revision previews/restoration, and TV offline caching are implemented in the workspace. Center branding, contacts, module visibility, clock format and Hijri adjustment are configurable. Events store UTC instants plus local recurrence rules; center pages receive server-generated search/share metadata.
 
 ## Required production configuration (not performed automatically)

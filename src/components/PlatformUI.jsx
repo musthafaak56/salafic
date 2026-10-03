@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { Link, NavLink } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { useCenter } from '../context/CenterContext'
@@ -6,6 +6,7 @@ import { useLanguage } from '../context/LanguageContext'
 import ThemeToggle from './ThemeToggle'
 import Button from './Button'
 import { inputClass } from './Field'
+import { act } from '../lib/platform'
 
 export function Shell({
   children,
@@ -15,11 +16,14 @@ export function Shell({
   actions,
   dir,
   lang,
+  sidebar,
 }) {
   return (
     <>
       <PlatformHeader />
-      <main className="platform-page" dir={dir} lang={lang}>
+      <main className={sidebar ? 'platform-page dashboard-layout' : 'platform-page'} dir={dir} lang={lang}>
+        {sidebar && <aside className="dashboard-sidebar">{sidebar}</aside>}
+        <div className="dashboard-content">
         <header className="platform-heading">
           <div>
             {eyebrow && <p className="eyebrow">{eyebrow}</p>}
@@ -29,6 +33,7 @@ export function Shell({
           {actions}
         </header>
         {children}
+        </div>
       </main>
       <footer className="platform-footer">
         Salafic · A place for every community.
@@ -181,6 +186,7 @@ export const CENTER_INITIAL = {
   address: '',
   latitude: '',
   longitude: '',
+  mapsUrl: '',
   timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
   currency: 'USD',
   locale: 'en',
@@ -226,38 +232,7 @@ export function CenterFields({
         required
         maxLength={300}
       />
-      <Input
-        label="Timezone"
-        list="timezones"
-        value={value.timezone}
-        onChange={set('timezone')}
-        required
-      />
-      <datalist id="timezones">
-        {Intl.supportedValuesOf('timeZone').map((t) => (
-          <option key={t} value={t} />
-        ))}
-      </datalist>
-      <Input
-        label="Latitude"
-        type="number"
-        step="any"
-        min="-90"
-        max="90"
-        value={value.latitude}
-        onChange={set('latitude')}
-        required
-      />
-      <Input
-        label="Longitude"
-        type="number"
-        step="any"
-        min="-180"
-        max="180"
-        value={value.longitude}
-        onChange={set('longitude')}
-        required
-      />
+      <MapLocationField value={value} onChange={onChange} required={request} />
       <Input
         label="Currency"
         value={value.currency}
@@ -380,4 +355,37 @@ export function CenterFields({
       )}
     </div>
   )
+}
+
+function MapLocationField({ value, onChange, required }) {
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  const sequence = useRef(0)
+  async function check() {
+    const current = ++sequence.current
+    setBusy(true)
+    setError('')
+    try {
+      const location = await act('resolveLocation', { mapsUrl: value.mapsUrl })
+      if (current === sequence.current) onChange((previous) => ({ ...previous, ...location }))
+    } catch (e) {
+      if (current === sequence.current) setError(e.message)
+    } finally {
+      if (current === sequence.current) setBusy(false)
+    }
+  }
+  return <div className="map-location-field">
+    <Input label="Google Maps link" type="url" placeholder="https://maps.app.goo.gl/…" value={value.mapsUrl} required={required} maxLength={8192} onChange={(mapsUrl) => {
+      sequence.current++
+      setBusy(false)
+      setError('')
+      onChange({ ...value, mapsUrl, latitude: '', longitude: '', timezone: '' })
+    }} />
+    <p className="platform-hint">Open your masjid or center in Google Maps, select Share, and copy the link. We’ll find its location and timezone automatically.</p>
+    <Button type="button" variant="outline" loading={busy} disabled={!value.mapsUrl} onClick={check}>Check location</Button>
+    {error && <Message error>{error}</Message>}
+    {value.latitude !== '' && value.latitude != null && value.longitude !== '' && value.longitude != null && <p className="platform-hint" role="status">
+      Location ready · {value.timezone} · <a target="_blank" rel="noopener noreferrer" href={`https://www.google.com/maps/search/?api=1&query=${value.latitude},${value.longitude}`}>View selected pin</a>
+    </p>}
+  </div>
 }

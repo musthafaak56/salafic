@@ -51,6 +51,7 @@ test('request approval, admin assignment, publishing, idempotency, and isolation
     address: 'Test address',
     latitude: 25.2,
     longitude: 55.2,
+    mapsUrl: 'https://www.google.com/maps?q=25.2,55.2',
     timezone: 'Asia/Dubai',
     currency: 'AED',
     locale: 'en',
@@ -64,6 +65,10 @@ test('request approval, admin assignment, publishing, idempotency, and isolation
     'submitApplication',
     { fields },
   )
+  const application = (await db.doc(`centerApplications/${id}`).get()).data()
+  assert.equal(application.latitude, 25.2)
+  assert.equal(application.timezone, 'Asia/Dubai')
+  assert.equal((await db.doc(`mailOutbox/${id}-1`).get()).data().to, 'musthafaak56@gmail.com')
   await assert.rejects(() =>
     call('applicant', 'applicant@example.com', 'reviewApplication', {
       id,
@@ -206,6 +211,25 @@ test('invitation requires the intended verified email and cannot be replayed', a
       id: 'test-invite',
     }),
   )
+})
+
+test('community editing respects center roles and version conflicts', async () => {
+  await db.doc('masjids/community-test').set({ version: 1, status: 'published' })
+  for (const [uid, role] of [['community-owner', 'owner'], ['community-editor', 'editor'], ['community-finance', 'finance']]) {
+    await db.doc(`masjids/community-test/members/${uid}`).set({ uid, role })
+  }
+  const edit = (uid, kind, fields, version) => call(uid, `${uid}@example.test`, 'saveCommunity', { centerId: 'community-test', kind, fields, version })
+  await edit('community-editor', 'madrasa', { name: 'Weekend madrasa', classes: [{ name: 'Quran', schedule: 'Saturday 9 am' }] }, 1)
+  await assert.rejects(() => edit('community-editor', 'committee', { members: [] }, 2))
+  await assert.rejects(() => edit('community-finance', 'madrasa', { name: 'Other' }, 2))
+  await assert.rejects(() => edit('outsider', 'madrasa', { name: 'Other' }, 2))
+  await edit('community-owner', 'committee', { members: [{ name: 'Example member', role: 'Secretary' }] }, 2)
+  await assert.rejects(() => edit('community-owner', 'committee', { members: [] }, 2))
+  const saved = (await db.doc('masjids/community-test').get()).data()
+  assert.equal(saved.madrasa.classes[0].name, 'Quran')
+  assert.equal(saved.committee.members[0].role, 'Secretary')
+  assert.equal(saved.version, 3)
+  assert.equal((await db.collection('masjids/community-test/members').get()).size, 3)
 })
 test('manual schedules, private event/form drafts, ledger reversals and ownership transfer', async () => {
   const id = 'extended-test'
