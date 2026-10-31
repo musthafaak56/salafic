@@ -17,6 +17,7 @@ export default function CenterCommunity({ kind }) {
       <Link to={base}>Overview</Link>
       <Link to={`${base}/prayer-times`}>Prayer times</Link>
       <Link to={`${base}/madrasa`}>Madrasa</Link>
+      <Link to={`${base}/hifdh`}>Hifdh</Link>
       <Link to={`${base}/committee`}>Committee</Link>
     </nav>
     <CommunityContent kind={kind} fields={fields} />
@@ -59,7 +60,7 @@ export function CommunityEditor({ kind }) {
   return <section className="platform-section">
     <h2>{title(kind)}</h2>
     <p>{kind === 'madrasa' ? 'Share your madrasa’s classes, schedules and public contact details.' : 'List the people serving your center and their committee roles. Listing someone here does not grant dashboard access; manage that under Team.'}</p>
-    <p className="platform-hint">Saved information appears on the public page when your center is published. Only add information you have permission to share.</p>
+    <p className="platform-hint">Saved information appears on the public page when your center is published. Only add information you have permission to share. This free-plan editor supports up to {kind === 'madrasa' ? '8 classes' : '12 committee members'}.</p>
     {action.feedback}
     {version !== center.version && <Message>The center has changed since you opened this form. <button type="button" onClick={() => { setFields(center[kind] || empty[kind]); setVersion(center.version) }}>Reload the latest information</button> before saving.</Message>}
     <form onSubmit={(e) => { e.preventDefault(); action.run(async () => {
@@ -86,7 +87,7 @@ export function CommunityEditor({ kind }) {
         <Button variant="ghost" type="button" onClick={() => set(key)(items.filter((_, i) => i !== index))}>Remove {kind === 'madrasa' ? 'class' : 'member'} {index + 1}</Button>
       </fieldset>)}
       <div className="platform-links">
-        <Button variant="outline" type="button" disabled={items.length >= (kind === 'madrasa' ? 30 : 50)} onClick={() => set(key)([...items, kind === 'madrasa' ? { name: '', schedule: '', teacher: '' } : { name: '', role: '' }])}>Add {kind === 'madrasa' ? 'class' : 'member'}</Button>
+        <Button variant="outline" type="button" disabled={items.length >= (kind === 'madrasa' ? 8 : 12)} onClick={() => set(key)([...items, kind === 'madrasa' ? { name: '', schedule: '', teacher: '' } : { name: '', role: '' }])}>Add {kind === 'madrasa' ? 'class' : 'member'}</Button>
         <Button type="submit" loading={action.busy} disabled={version !== center.version}>Save {kind}</Button>
         <Link to={`${base}/${kind}`}>View public page</Link>
       </div>

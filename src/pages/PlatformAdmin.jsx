@@ -3,7 +3,8 @@ import { Link, Outlet, useLocation } from 'react-router-dom'
 import { collection, onSnapshot, query, orderBy, limit, where } from 'firebase/firestore'
 import { db } from '../lib/firebase'
 import { useAuth } from '../context/AuthContext'
-import { Shell, Input, Message } from '../components/PlatformUI'
+import { Shell, Input, Message, CenterFields, CENTER_INITIAL, useAction } from '../components/PlatformUI'
+import { act } from '../lib/platform'
 import DashboardNav from '../components/DashboardNav'
 import Button from '../components/Button'
 
@@ -23,6 +24,11 @@ export default function PlatformAdmin() {
 }
 
 export function PlatformCenters() {
+  const { profile } = useAuth()
+  const [creating, setCreating] = useState(false)
+  const [fields, setFields] = useState({ ...CENTER_INITIAL })
+  const [created, setCreated] = useState(null)
+  const action = useAction()
   const [name, setName] = useState('')
   const [count, setCount] = useState(50)
   const [state, setState] = useState({ loading: true, items: [] })
@@ -35,10 +41,35 @@ export function PlatformCenters() {
     () => setState({ items: [], error: 'Centers could not be loaded. Check your connection and platform access.' }))
   }, [name, count])
   return <section className="platform-section">
+    {profile?.role === 'superadmin' && <>
+      <div className="platform-links">
+        <Button variant="outline" aria-expanded={creating} aria-controls="create-center-form" disabled={action.busy} onClick={() => setCreating(!creating)}>{creating ? 'Close creation form' : 'Create center / masjid'}</Button>
+      </div>
+      {action.feedback}
+      {created && <Message>Created as a draft. <Link to={`/c/${created.slug}/admin`}>Manage your new center</Link> to add admins through Team and publish from Settings.</Message>}
+      {creating && <form id="create-center-form" onSubmit={e => {
+        e.preventDefault()
+        action.run(async () => {
+          const result = await act('createCenter', { fields })
+          setCreated(result)
+          setCreating(false)
+          setFields({ ...CENTER_INITIAL })
+        }, 'Center created. No approval or invitation is needed for your superadmin access.')
+      }}>
+        <h2>Create center / masjid</h2>
+        <p className="platform-hint">Create a draft directly as superadmin. You can manage it immediately and add other administrators through Team.</p>
+        <fieldset disabled={action.busy}>
+          <CenterFields value={fields} onChange={setFields} request designatedAdmin={false} />
+          <label className="platform-check"><input type="checkbox" required />This Google Maps link points to the correct masjid or center.</label>
+          <p className="platform-hint">Prayer times use the location and timezone from your map link. The center stays private until you publish it in Settings.</p>
+          <div className="platform-links"><Button variant="outline" type="submit" loading={action.busy}>Create draft center</Button><Button type="button" variant="ghost" onClick={() => setCreating(false)}>Cancel</Button></div>
+        </fieldset>
+      </form>}
+    </>}
     <Input label="Search centers by name" type="search" value={name} onChange={(value) => { setName(value); setCount(50) }} />
     {state.loading && <p role="status">Loading centers…</p>}
     {state.error && <Message error>{state.error}</Message>}
-    {!state.loading && !state.error && !state.items.length && <p className="platform-empty">No centers found. Approve a registration request to create a center.</p>}
+    {!state.loading && !state.error && !state.items.length && <p className="platform-empty">No centers found. Create a center above or approve a registration request.</p>}
     {state.items.map((center) => <article className="platform-row center-management-row" key={center.id}>
       <div><h2>{center.displayName}</h2><p>{center.city}, {center.countryCode} · {center.status}</p></div>
       <div className="platform-links">

@@ -6,9 +6,26 @@ Evolve the existing Cherukunnu website into one shared platform for masjids and 
 
 Visitors can view prayer times, published donations, and published expenses without logging in. Authentication is required for management, not public browsing. Preserve the premium, simple white-and-blue design and first-class dark mode described below.
 
-This is an implementation plan only. Production migration and deployment are separate execution steps.
+This plan includes implementation and rollout status. The Spark-only requirements below supersede earlier backend-dependent items throughout this document.
 
-## Implementation status — 27 September 2026
+## Free-plan architecture — 11 October 2026
+
+Use Firebase Spark: classic static Hosting, Authentication, and Standard Firestore within their free quotas. No Cloud Functions deployment, Cloud Scheduler, SMTP, paid Google Maps API, Firebase Storage uploads, or billing upgrade is required. Existing `functions/` source is retained for shared pure helpers and historical migration tools, not deployed as a runtime.
+
+- Browser Firestore transactions implement registration, review, invitation claims, staff management, drafts, publishing, and finance. Firestore Rules remain the authoritative permission and schema boundary; client checks are only conveniences.
+- `musthafaak56@gmail.com` already has a verified UID-bound super-admin role in production. All requests appear in the private platform dashboard. Application changes and invitations appear in My requests; custom email notifications are removed. Standard Firebase account verification/reset emails are separate.
+- Approval creates a draft center and an expiring invitation for the designated admin email. Only the verified matching recipient may atomically claim membership. Approval does not publish a center or grant the submitter access automatically.
+- Registration requires a full Google Maps pin/place URL. Open shortened share links first and copy the browser URL. Coordinates and timezone are extracted locally; no latitude/longitude fields or paid resolver are used. Camera-only/search URLs are rejected.
+- Prayer schedules are calculated in the browser from the center location/timezone. Admin and super-admin signed minute adjustments and manual schedules remain available.
+- Public pages remain signed-out accessible. Private drafts, ledgers, invitations, and responses stay restricted. Anonymous forms permit bounded create-only submissions; per-IP throttling is unavailable without a server. Optional App Check is not claimed enabled.
+- Announcements expire from public views and offline TV by their visibility window. No scheduled archival runs. Static Hosting serves a generic app shell; crawler-visible server-generated center metadata is no longer provided.
+- Editors support 8 madrasa classes, 12 committee members, and 4 form questions, with 10 choices per question and 20 choices total, keeping transactions within Rules evaluation limits.
+- Finance retains immutable entries and reversals, version checks, reconciliation, and sanitized publications. Authorized finance operators are trusted to maintain aggregate totals; client audit rows are not independent server-certified evidence.
+- Spark quotas are finite: exceeding them may interrupt service. No paid-plan dependency does not mean unlimited capacity. Monitor usage and public-form abuse.
+
+Production `masjids` was empty when inspected on 11 October 2026. No Cherukunnu records were migrated or fabricated. Full localization, target-device offline/download checks, accessibility acceptance, and real-center pilots remain rollout gates. See `docs/worldwide-rollout.md` for current deployment and verification guidance.
+
+## Historical implementation status — 27 September 2026
 
 The main platform implementation and the remaining local feature work are now in the codebase: scoped public/admin pages, trusted request approval and team workflows, configurable center identity, prayer offsets/manual timetables/monthly printing/posters, private drafts and revision restoration, opening balances and audited ledger corrections/reconciliation, cumulative public report history, announcements/archival, offline TV caching, URL aliases and server-generated center metadata.
 
@@ -72,14 +89,14 @@ On center switches, cancel old listeners, clear center-specific form state, and 
 
 ## Onboarding and permissions
 
-The platform super admin is **musthafaak56@gmail.com**. All masjid/center registration requests appear in this account's private platform review inbox, with an email notification to the same address. The super admin can approve, reject, or request corrections and manage prayer adjustments for any center.
+The platform super admin is **musthafaak56@gmail.com**. All masjid/center registration requests appear in this account's private platform review inbox. There are no custom email notifications. The super admin can approve, reject, or request corrections and manage prayer adjustments for any center.
 
-Provision this privilege through a trusted setup process tied to the verified Firebase account UID for that email. Do not grant super-admin access based on a client-editable profile email or a frontend email comparison. The email notification is a convenience; the stored application and dashboard remain the source of truth, with retryable notification delivery.
+Provision this privilege through a trusted setup process tied to the verified Firebase account UID for that email. Do not grant super-admin access based on a client-editable profile email or a frontend email comparison. The stored application and dashboard remain the source of truth.
 
-1. Representative signs in and submits center identity, country/address, coordinates, timezone, currency, language, contact details, and a required **designated admin email**. This email may differ from the submitter's email.
+1. Representative signs in and submits identity, country/address, a full Google Maps pin/place URL, currency, language, contact details, and a required **designated admin email**. Coordinates/timezone are extracted locally; no coordinate inputs are shown. The designated email may differ from the submitter's email.
 2. Validate fields and show possible duplicates. Require confirmation of location and timezone rather than using the representative's device location automatically.
-3. Save a private application, including the designated admin email, and notify **musthafaak56@gmail.com**. No center-management access is granted while the request is pending.
-4. Super-admin approval creates the draft center and grants its initial administrator membership to the verified account matching the designated admin email through a retry-safe backend operation. If that account does not yet exist or is not verified, keep the grant pending and send an expiring invitation; activate it only after the intended recipient signs in with that verified email. Do not automatically make the submitter the admin.
+3. Save a private application, including the designated admin email, in **musthafaak56@gmail.com**'s review dashboard. No center-management access is granted while pending.
+4. Super-admin approval creates a draft center and an expiring invitation through a retry-safe Rules-protected transaction. The designated recipient signs in with a verified matching email and accepts from My requests. Never automatically make the submitter the admin.
 5. The designated center admin completes a draft setup checklist: branding, location-derived prayer defaults, opening financial balance, and initial content. This initial admin also receives the center settings/team capabilities described as owner capabilities below.
 6. Publish after approval and configuration validation. Keep approval and publication status distinct.
 7. The center admin invites additional staff using expiring, single-use invitations accepted by the intended authenticated recipient.
@@ -108,7 +125,7 @@ Define capabilities for owner (settings/team), administrator (daily operations),
 - Give applicants a private request-status page showing **Pending review**, **Changes requested**, **Approved**, or **Rejected**, with a dated activity history.
 - When requesting corrections or rejecting a request, the super admin supplies a clear applicant-facing reason. Keep internal review notes separate and private.
 - Let applicants edit and resubmit a request when changes are requested, retaining prior submissions and reviewer feedback. Revalidate any changed designated admin email before approval.
-- Notify applicants of status changes and show the same status in their dashboard. Failed email delivery must not lose the request or block its review.
+- Show applicants status changes in their dashboard. No custom email delivery is required.
 - Give **musthafaak56@gmail.com** one review queue with status filters, submission dates, center/location details, designated admin email, and possible duplicate centers.
 - After approval, separately show whether the designated admin has accepted the invitation and whether the center is draft or published; approval does not imply onboarding is finished.
 - Restrict request access to the submitter and super admin. Share only the necessary invitation details with the designated admin if that is a different person.
@@ -231,7 +248,7 @@ Use the design foundation below across all centers. Local identity comes from lo
 | 5. Worldwide behavior | Prayer timezone logic, currencies, localization, RTL, offline-resilient TV, themes | India, daylight-saving, Arabic, offline restart, and reconnection scenarios pass |
 | 6. Migration and launch | Compatibility redirects, reconciled data, pilot rollout, monitoring | Existing Cherukunnu records and links remain usable |
 
-Keep the React/Firebase stack. Add a trusted backend for provisioning, memberships, public aggregation, and controlled submissions; select/configure its runtime during phase 2.
+Keep the React/Firebase stack. Use browser transactions with authoritative Firestore Rules for operational workflows. A trusted operator provisions the initial platform role; no deployed Cloud Functions runtime is required. Historical backend-dependent items are superseded by the free-plan architecture above.
 
 ## Worldwide acceptance criteria
 
@@ -240,7 +257,7 @@ Keep the React/Firebase stack. Add a trusted backend for provisioning, membershi
 - Applicants can track requests, read correction/rejection reasons, and resubmit corrections; the super-admin queue and applicant status agree even if notifications fail.
 - A previously loaded TV display survives an offline restart with valid cached data, handles local midnight and expired notices, and refreshes automatically after reconnecting. Missing current-day data is clearly identified.
 - A new center can be added and published without code changes or a separate deployment.
-- Registration requests appear in **musthafaak56@gmail.com**'s super-admin inbox and trigger retryable email notifications. Approval, rejection, and requests for correction are recorded.
+- Registration requests appear in **musthafaak56@gmail.com**'s super-admin dashboard without custom emails. Approval, rejection, and requests for correction are recorded.
 - Only the approved request's designated admin email receives the initial center-admin grant after verified sign-in; test differing submitter/admin emails, new accounts, pending verification, and repeated approval attempts.
 - Initial prayer times come from the supplied center location. Both center admin and super admin can save positive, negative, and zero per-prayer offsets; unauthorized users cannot.
 - Verify offsets persist across dates and refreshes, never compound, correctly handle midnight boundaries, and produce identical times across public pages and TV. Explicit manual timetables must not receive offsets twice.

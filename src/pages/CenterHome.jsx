@@ -191,6 +191,7 @@ export default function CenterHome({ tv = false }) {
           ['', t.overview],
           ['prayer-times', t.prayers],
           ['madrasa', 'Madrasa'],
+          ['hifdh', 'Hifdh'],
           ['committee', 'Committee'],
           ['finances', t.finances],
           ['events', t.events],

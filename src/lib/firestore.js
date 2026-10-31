@@ -1,6 +1,6 @@
 import { collection, getDocs, getDoc, query, orderBy, limit, doc } from 'firebase/firestore'
-import { httpsCallable } from 'firebase/functions'
-import { db, functions } from './firebase'
+import { db } from './firebase'
+import { submitSparkForm } from './sparkForms'
 import { act } from './platform'
 
 function masjidRef(id) {
@@ -29,7 +29,7 @@ export const addForm = async (centerId, payload) => (await act('contentWrite', {
 export const updateForm = (centerId, id, payload) => act('contentWrite', {centerId,collection:'forms',id,payload})
 export const deleteForm = (centerId, id) => act('contentWrite', {centerId,collection:'forms',id,remove:true})
 export const getSubmissions = async (id, formId) => (await list(id, 'formSubmissions', 1000)).filter(s => s.formId === formId)
-export const addSubmission = async (centerId, data) => (await httpsCallable(functions, 'submitPublicForm')({centerId,...data})).data
+export const addSubmission = (centerId, data) => submitSparkForm(db, centerId, data)
 // Compatibility exports for the retired single-center screens; writes still require a center.
 export const addFund = (centerId,data) => act('ledger',{centerId,kind:'funds',id:crypto.randomUUID(),...data,amount:String(data.amount)})
 export const addExpense = (centerId,data) => act('ledger',{centerId,kind:'expenses',id:crypto.randomUUID(),...data,amount:String(data.amount)})

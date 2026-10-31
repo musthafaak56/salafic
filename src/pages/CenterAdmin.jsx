@@ -52,12 +52,12 @@ export function CenterAdminLayout() {
     ...(['owner', 'admin', 'editor'].includes(role)
       ? [
           ['prayer-times', 'Prayer times'],
-          ['madrasa', 'Madrasa'],
           ['announcements', 'Announcements'],
           ['events', 'Events'],
           ['forms', 'Forms'],
         ]
       : []),
+    ...(['owner', 'admin'].includes(role) ? [['education', 'Education']] : []),
     ...(['owner', 'admin', 'finance'].includes(role)
       ? [['finances', 'Finances']]
       : []),
@@ -826,7 +826,7 @@ export function CenterTeam() {
           e.preventDefault()
           action.run(
             () => act('inviteMember', { centerId, email, role }),
-            'Invitation queued. The recipient must accept with their verified email.',
+            'Invitation available in the recipient’s My requests page. Tell them to sign in with their verified email; no email is sent.',
           )
         }}
       >

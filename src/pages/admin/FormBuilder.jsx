@@ -255,11 +255,13 @@ export default function FormBuilder() {
               variant="outline"
               size="sm"
               onClick={addField}
+              disabled={fields.length >= 4}
             >
               + Add question
             </Button>
           </div>
 
+          <p className="mb-4 text-sm text-ink-secondary">Up to 4 questions, 10 choices per question, and 20 choices across the form.</p>
           {fields.length === 0 ? (
             <p className="py-6 text-center text-sm text-ink-secondary">
               No questions yet. Add at least one question so people can respond.
@@ -313,7 +315,7 @@ export default function FormBuilder() {
                     <Field
                       label="Options (one per line)"
                       htmlFor={`field-options-${field.id}`}
-                      hint="People choose from these."
+                      hint="People choose from these. Maximum 10 choices."
                     >
                       <textarea
                         id={`field-options-${field.id}`}

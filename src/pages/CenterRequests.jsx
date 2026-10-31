@@ -81,7 +81,7 @@ export default function CenterRequests({ review = false, embedded = false }) {
       {!review && (
         <section className="platform-section">
           <h2>How registration works</h2>
-          <p>Send your center’s details and designated admin email to musthafaak56@gmail.com for review. Approval gives that email owner access; other emails do not gain access automatically.</p>
+          <p>Submit your center’s details to the super-admin dashboard managed by musthafaak56@gmail.com. After approval, the designated administrator accepts an invitation here using their verified email. No notification emails are sent.</p>
           <p>After approval, sign in with the designated email, refresh access below, and accept any invitation shown here. Then open your dashboard. Use Team to invite sub-admins by email; they sign in with that same verified email and accept their invitation here.</p>
           <div className="platform-links">
             <Button variant="outline" loading={action.busy} onClick={() => action.run(() => refreshAccess(), 'Access refreshed. Check your centers and invitations below.')}>Refresh my access</Button>
@@ -184,7 +184,7 @@ export default function CenterRequests({ review = false, embedded = false }) {
                 action.run(
                   () =>
                     act('resendInitialInvitation', { centerId: item.centerId }),
-                  'Administrator invitation renewed and notification queued.',
+                  'Administrator invitation renewed. It appears in their My requests page.',
                 )
               }
               busy={action.busy}
@@ -192,7 +192,7 @@ export default function CenterRequests({ review = false, embedded = false }) {
                 action.run(
                   () =>
                     act('reviewApplication', { id: item.id, status, feedback }),
-                  'Review saved. Notification queued.',
+                  'Review saved. The applicant can see the update in My requests.',
                 )
               }
               onEdit={() => {

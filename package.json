@@ -24,7 +24,8 @@
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
     "react-router-dom": "^7.18.2",
-    "tailwindcss": "^4.3.3"
+    "tailwindcss": "^4.3.3",
+    "tz-lookup": "^6.1.25"
   },
   "devDependencies": {
     "@firebase/rules-unit-testing": "^5.0.2",

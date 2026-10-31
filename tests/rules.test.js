@@ -115,8 +115,8 @@ test('profile create/update reject escalation, extra fields, oversized data and 
     ),
   )
 })
-test('even super admin uses backend for mutations', async () => {
-  const db = env.authenticatedContext('super').firestore()
+test('super admin still cannot bypass schemas or send client-side mail', async () => {
+  const db = env.authenticatedContext('super', {email:'musthafaak56@gmail.com',email_verified:true}).firestore()
   await assertSucceeds(getDoc(doc(db, 'centerApplications', 'request')))
   await assertFails(
     setDoc(doc(db, 'masjids', 'a', 'funds', 'new'), { amountMinor: -100 }),

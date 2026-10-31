@@ -1,4 +1,4 @@
-import { httpsCallable } from 'firebase/functions'
+import { createSparkActions } from './sparkActions'
 import {
   collection,
   doc,
@@ -10,9 +10,8 @@ import {
   startAfter,
   where,
 } from 'firebase/firestore'
-import { db, functions } from './firebase'
-export const act = async (action, data = {}) =>
-  (await httpsCallable(functions, 'platformAction')({ action, ...data })).data
+import { db, auth } from './firebase'
+export const act = createSparkActions(db, () => auth.currentUser)
 export const centerDocument = (id, ...path) => {
   if (!id) throw new Error('Choose a center first.')
   return doc(db, 'masjids', id, ...path)

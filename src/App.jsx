@@ -9,6 +9,7 @@ import {
 import { AuthProvider } from './context/AuthContext'
 import { LanguageProvider } from './context/LanguageContext'
 import { ThemeProvider } from './context/ThemeContext'
+import ManagementShell from './components/ManagementShell'
 import CenterRoute, { useCenter } from './context/CenterContext'
 import { useAuth } from './context/AuthContext'
 import Login from './pages/Login'
@@ -22,6 +23,9 @@ import CenterHome from './pages/CenterHome'
 import CenterRequests from './pages/CenterRequests'
 import PlatformAdmin, { PlatformCenters } from './pages/PlatformAdmin'
 import CenterCommunity, { CommunityEditor } from './pages/CenterCommunity'
+import CenterEducation from './pages/CenterEducation'
+import CenterHifdh from './pages/CenterHifdh'
+import LMTracker from './pages/LMTracker'
 import {
   CenterAdminLayout,
   CenterOverview,
@@ -87,8 +91,10 @@ export default function App() {
       <LanguageProvider>
         <AuthProvider>
           <BrowserRouter>
+            <ManagementShell>
             <Routes>
               <Route path="/" element={<Home />} />
+              <Route path="/lmtracker" element={<LMTracker />} />
               <Route path="/centers" element={<Centers />} />
               <Route path="/login" element={<Login />} />
               <Route path="/register" element={<Register />} />
@@ -132,6 +138,7 @@ export default function App() {
                 <Route path="finances" element={<CenterHome />} />
                 <Route path="events" element={<CenterHome />} />
                 <Route path="madrasa" element={<CenterCommunity kind="madrasa" />} />
+                <Route path="hifdh" element={<CenterHifdh />} />
                 <Route path="committee" element={<CenterCommunity kind="committee" />} />
                 <Route path="tv" element={<CenterHome tv />} />
                 <Route path="forms/:formId" element={<PublicForm />} />
@@ -145,6 +152,7 @@ export default function App() {
                 >
                   <Route index element={<CenterOverview />} />
                   <Route path="settings" element={<CenterSettings />} />
+                  <Route path="education" element={<CenterEducation />} />
                   <Route path="madrasa" element={<CommunityEditor key="madrasa" kind="madrasa" />} />
                   <Route path="committee" element={<CommunityEditor key="committee" kind="committee" />} />
                   <Route
@@ -189,6 +197,7 @@ export default function App() {
               />
               <Route path="*" element={<Navigate to="/centers" replace />} />
             </Routes>
+            </ManagementShell>
           </BrowserRouter>
         </AuthProvider>
       </LanguageProvider>

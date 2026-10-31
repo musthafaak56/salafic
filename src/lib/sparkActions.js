@@ -1,0 +1,1012 @@
+import { serverTimestamp } from "firebase/firestore";
+import { sparkStore } from "./sparkStore.js";
+import { eventFields, zonedInstant } from "../../functions/time.js";
+import { resolveMapLocation } from "./sparkMaps.js";
+import { communityFields } from "../../functions/community.js";
+import { educationFields, checkEducationClasses, EDUCATION_COLLECTIONS } from "./education.js";
+import {
+  applicationFields,
+  centerFields,
+  prayerSettings,
+  DEFAULT_PRAYER,
+  text,
+  email,
+  validId,
+  slug,
+  minorUnits,
+  noticeFields,
+  manualSchedule,
+  checkVersion,
+  can,
+  ROLES,
+} from "../../functions/domain.js";
+
+class HttpsError extends Error {
+  constructor(code, message) {
+    super(message);
+    this.code = code;
+  }
+}
+const now = () => new Date().toISOString();
+export function createSparkActions(firestore, currentUser) {
+  const db = sparkStore(firestore);
+  const centerRef = (id) => db.collection("masjids").doc(validId(id));
+  const identity = (req) => {
+    if (!req.auth || !req.auth.token.email_verified)
+      throw new HttpsError(
+        "unauthenticated",
+        "Sign in with a verified email account.",
+      );
+    return { uid: req.auth.uid, email: email(req.auth.token.email) };
+  };
+  async function permissions(tx, uid, centerId, capability = "content") {
+    const role = await tx.get(db.doc(`platformRoles/${uid}`));
+    if (role.data()?.role === "superadmin") return "superadmin";
+    if (!centerId)
+      throw new HttpsError(
+        "permission-denied",
+        "Super-admin access is required.",
+      );
+    const member = await tx.get(
+      centerRef(centerId).collection("members").doc(uid),
+    );
+    if (!can(member.data()?.role, capability))
+      throw new HttpsError(
+        "permission-denied",
+        "You do not have permission for this center.",
+      );
+    if (capability === "team" && member.data()?.role !== "owner")
+      throw new HttpsError("permission-denied", "Owner access is required.");
+    return member.data().role;
+  }
+  function audit(tx, ref, uid, action, extra = {}) {
+    tx.create(ref.collection("auditLogs").doc(), {
+      uid,
+      action,
+      at: now(),
+      ...extra,
+    });
+  }
+  function grant(tx, ref, uid, role, address, invitationId) {
+    tx.set(ref.collection("members").doc(uid), {
+      uid,
+      role,
+      email: address,
+      joinedAt: now(),
+      invitationId,
+    });
+    tx.set(db.doc(`userCenters/${uid}/centers/${ref.id}`), {
+      centerId: ref.id,
+      role,
+    });
+  }
+
+  return async function actionHandler(action, data = {}) {
+    const current = currentUser();
+    const req = {
+      auth: current
+        ? {
+            uid: current.uid,
+            token: {
+              email: current.email,
+              email_verified: current.emailVerified,
+            },
+          }
+        : null,
+    };
+
+    try {
+      const user = identity(req);
+      if (action === "session") {
+        const [platform, memberships, invitations] = await Promise.all([
+          db.doc(`platformRoles/${user.uid}`).get(),
+          db.collection(`userCenters/${user.uid}/centers`).get(),
+          db
+            .collection("centerInvitations")
+            .where("email", "==", user.email)
+            .where("status", "==", "pending")
+            .get(),
+        ]);
+        const centers = await Promise.all(
+          memberships.docs.map(async (m) => {
+            const c = await centerRef(m.id).get();
+            return c.exists
+              ? { id: c.id, ...c.data(), role: m.data().role }
+              : null;
+          }),
+        );
+        return {
+          role:
+            platform.data()?.role === "superadmin"
+              ? "superadmin"
+              : centers.some(Boolean)
+                ? "admin"
+                : "user",
+          centers: centers.filter(Boolean),
+          invitations: invitations.docs
+            .filter((d) => d.data().expiresAt > now())
+            .map((d) => ({ id: d.id, ...d.data() })),
+        };
+      }
+      if (action === "resolveLocation") {
+        return await resolveMapLocation(data.mapsUrl);
+      }
+      if (action === "createCenter") {
+        const location = await resolveMapLocation(data.fields?.mapsUrl);
+        const fields = centerFields({ ...data.fields, ...location });
+        const centerSlug = slug(data.fields?.slug);
+        const center = db.collection("masjids").doc();
+        const slugRef = db.doc(`centerSlugs/${centerSlug}`);
+        await db.runTransaction(async (tx) => {
+          await permissions(tx, user.uid);
+          if ((await tx.get(slugRef)).exists)
+            throw new Error("That center URL is already in use. Choose a different URL.");
+          tx.create(center, {
+            ...fields,
+            slug: centerSlug,
+            searchName: fields.displayName.toLowerCase(),
+            status: "draft",
+            version: 1,
+            prayer: DEFAULT_PRAYER,
+            openingBalanceMinor: 0,
+            createdAt: now(),
+          });
+          tx.create(slugRef, { centerId: center.id });
+          audit(tx, center, user.uid, "center.created");
+        });
+        return { id: center.id, slug: centerSlug };
+      }
+      if (action === "submitApplication") {
+        const location = await resolveMapLocation(data.fields?.mapsUrl);
+        const fields = applicationFields({ ...data.fields, ...location });
+        const ref = db
+          .collection("centerApplications")
+          .doc(data.id ? validId(data.id) : db.collection("_").doc().id);
+        await db.runTransaction(async (tx) => {
+          const previous = await tx.get(ref);
+          const rateRef = db.doc(`requestLimits/${user.uid}`);
+          const rate = await tx.get(rateRef);
+          if (
+            previous.exists &&
+            (previous.data().submitterUid !== user.uid ||
+              previous.data().status !== "changes_requested")
+          )
+            throw new HttpsError(
+              "permission-denied",
+              "Only a request awaiting corrections can be resubmitted.",
+            );
+          if (rate.exists && Date.now() - Date.parse(rate.data().at) < 30000)
+            throw new Error("Please wait a moment before submitting again.");
+          const history = [
+            ...(previous.data()?.history || []),
+            { status: "pending", at: now(), actor: user.uid },
+          ];
+          if (history.length > 50)
+            throw new Error(
+              "Please contact the super admin about this request.",
+            );
+          tx.set(ref, {
+            ...fields,
+            submitterUid: user.uid,
+            submitterEmail: user.email,
+            status: "pending",
+            createdAt: previous.data()?.createdAt || now(),
+            updatedAt: now(),
+            history,
+            feedback: "",
+          });
+          tx.set(rateRef, { at: now(), serverAt: serverTimestamp() });
+        });
+        return { id: ref.id };
+      }
+      if (action === "reviewApplication") {
+        const ref = db.collection("centerApplications").doc(validId(data.id));
+        if (
+          !["approved", "rejected", "changes_requested"].includes(data.status)
+        )
+          throw new Error("Invalid review status.");
+        const feedback = text(
+          data.feedback || "",
+          2000,
+          data.status !== "approved",
+        );
+        // The designated email claims access through a verified-email invitation.
+        const application = await ref.get();
+        if (!application.exists) throw new Error("Request not found.");
+        await db.runTransaction(async (tx) => {
+          await permissions(tx, user.uid);
+          const snap = await tx.get(ref),
+            old = snap.data();
+          if (old.status === "approved" && data.status === "approved") return;
+          if (old.status !== "pending")
+            throw new Error("This request has already been reviewed.");
+          const center = centerRef(ref.id),
+            slugRef = db.doc(`centerSlugs/${old.slug}`);
+          const slugDoc =
+            data.status === "approved" ? await tx.get(slugRef) : null;
+          if (slugDoc?.exists)
+            throw new Error(
+              "That center URL is already in use. Request a different URL.",
+            );
+          tx.update(ref, {
+            status: data.status,
+            feedback,
+            reviewerUid: user.uid,
+            updatedAt: now(),
+            ...(data.status === "approved"
+              ? {
+                  centerId: center.id,
+                  adminStatus: "invited",
+                  centerStatus: "draft",
+                }
+              : {}),
+            history: [
+              ...old.history,
+              { status: data.status, at: now(), actor: user.uid, feedback },
+            ],
+          });
+          if (data.status === "approved") {
+            tx.create(center, {
+              ...centerFields(old),
+              slug: old.slug,
+              searchName: old.displayName.toLowerCase(),
+              status: "draft",
+              version: 1,
+              prayer: DEFAULT_PRAYER,
+              openingBalanceMinor: 0,
+              createdAt: now(),
+            });
+            tx.create(slugRef, { centerId: center.id });
+            tx.create(db.doc(`centerInvitations/${ref.id}`), {
+              centerId: center.id,
+              centerName: old.displayName,
+              email: old.designatedAdminEmail,
+              role: "owner",
+              status: "pending",
+              applicationId: ref.id,
+              expiresAt: new Date(Date.now() + 7 * 86400000).toISOString(),
+              expiresAtMs: Date.now() + 7 * 86400000,
+            });
+            audit(tx, center, user.uid, "center.approved");
+          }
+        });
+        return { ok: true };
+      }
+      if (action === "acceptInvitation") {
+        await db.runTransaction(async (tx) => {
+          const ref = db.doc(`centerInvitations/${validId(data.id)}`),
+            snap = await tx.get(ref),
+            invite = snap.data();
+          if (
+            !invite ||
+            invite.email !== user.email ||
+            invite.status !== "pending" ||
+            invite.expiresAt <= now()
+          )
+            throw new Error("This invitation is unavailable or expired.");
+          const center = centerRef(invite.centerId);
+          const member = await tx.get(
+            center.collection("members").doc(user.uid),
+          );
+          if (!member.exists)
+            grant(tx, center, user.uid, invite.role, user.email, data.id);
+          tx.update(ref, {
+            status: "accepted",
+            acceptedAt: now(),
+            acceptedBy: user.uid,
+          });
+          if (invite.applicationId)
+            tx.update(db.doc(`centerApplications/${invite.applicationId}`), {
+              adminStatus: "active",
+            });
+          audit(tx, center, user.uid, "invitation.accepted");
+        });
+        return { ok: true };
+      }
+      const ref = centerRef(data.centerId);
+      if (action === "saveEducation") {
+        const fields = educationFields(data.entity, data.fields || {});
+        const target = ref.collection(EDUCATION_COLLECTIONS[data.entity]).doc(data.id ? validId(data.id) : undefined);
+        await db.runTransaction(async (tx) => {
+          await permissions(tx, user.uid, ref.id, "education");
+          const parent = await tx.get(ref);
+          if (!parent.exists) throw new Error("Center unavailable.");
+          const existing = await tx.get(target);
+          checkVersion(existing.data()?.version, data.version || 0);
+          if (existing.exists && fields.kind && fields.kind !== existing.data().kind)
+            throw new Error("The Madrasa / Center type cannot be changed after creation.");
+          const classes = await Promise.all((fields.classIds || []).map(async (id) => {
+            const snap = await tx.get(ref.collection("educationClasses").doc(id));
+            return snap.exists ? { ...snap.data(), id } : null;
+          }));
+          checkEducationClasses(data.entity, fields, classes.filter(Boolean));
+          tx.set(target, { ...fields, version: (existing.data()?.version || 0) + 1,
+            createdAt: existing.data()?.createdAt || serverTimestamp(), updatedAt: serverTimestamp() });
+          audit(tx, ref, user.uid, `education.${data.entity}.saved`, { recordId: target.id });
+        });
+        return { id: target.id };
+      }
+      if (action === "saveCommunity") {
+        const fields = communityFields(data.kind, data.fields);
+        if ((fields.classes?.length || 0) > 8 || (fields.members?.length || 0) > 12)
+          throw new Error("The free-plan editor supports up to 8 classes or 12 committee members per center.");
+        await db.runTransaction(async (tx) => {
+          await permissions(
+            tx,
+            user.uid,
+            ref.id,
+            data.kind === "committee" ? "team" : "content",
+          );
+          const snap = await tx.get(ref);
+          if (!snap.exists) throw new Error("Center unavailable.");
+          checkVersion(snap.data().version, data.version);
+          tx.update(ref, {
+            [data.kind]: fields,
+            version: snap.data().version + 1,
+            updatedAt: now(),
+          });
+          audit(tx, ref, user.uid, `${data.kind}.updated`);
+        });
+        return { ok: true };
+      }
+      if (action === "resendInitialInvitation") {
+        await db.runTransaction(async (tx) => {
+          await permissions(tx, user.uid);
+          const applicationRef = db.doc(`centerApplications/${ref.id}`),
+            application = await tx.get(applicationRef);
+          const invitationRef = db.doc(`centerInvitations/${ref.id}`),
+            invitation = await tx.get(invitationRef);
+          if (
+            application.data()?.status !== "approved" ||
+            application.data()?.adminStatus === "active" ||
+            !invitation.exists ||
+            invitation.data().status !== "pending"
+          )
+            throw new Error(
+              "This request does not have a pending administrator invitation.",
+            );
+          tx.update(invitationRef, {
+            expiresAt: new Date(Date.now() + 7 * 86400000).toISOString(),
+            expiresAtMs: Date.now() + 7 * 86400000,
+          });
+          audit(tx, ref, user.uid, "initial-invitation.renewed");
+        });
+        return { ok: true };
+      }
+      if (action === "auditCenterAccess") {
+        await db.runTransaction(async (tx) => {
+          const [platform, member, center] = await Promise.all([
+            tx.get(db.doc(`platformRoles/${user.uid}`)),
+            tx.get(ref.collection("members").doc(user.uid)),
+            tx.get(ref),
+          ]);
+          if (
+            !center.exists ||
+            (platform.data()?.role !== "superadmin" &&
+              !ROLES.includes(member.data()?.role))
+          )
+            throw new HttpsError(
+              "permission-denied",
+              "Center access is unavailable.",
+            );
+          audit(tx, ref, user.uid, "administration.opened", {
+            platformAccess: platform.data()?.role === "superadmin",
+          });
+        });
+        return { ok: true };
+      }
+      if (action === "reconcileFinance") {
+        await db.runTransaction(async (tx) => {
+          await permissions(tx, user.uid, ref.id, "finance");
+          const state = await tx.get(
+            ref.collection("financeState").doc("current"),
+          );
+          const [center, funds, expenses] = await Promise.all([
+            tx.get(ref),
+            tx.get(ref.collection("funds")),
+            tx.get(ref.collection("expenses")),
+          ]);
+          const currency = center.data().currency;
+          const total = (snap) =>
+            snap.docs.reduce((sum, doc) => {
+              const row = doc.data();
+              if (row.currency && row.currency !== currency)
+                throw new Error(
+                  "Currency mismatch. Review the ledger before reconciling.",
+                );
+              const amount =
+                row.amountMinor ??
+                (Number(row.amount) === 0
+                  ? 0
+                  : minorUnits(String(row.amount), currency));
+              if (
+                !Number.isSafeInteger(amount) ||
+                !Number.isSafeInteger(sum + amount)
+              )
+                throw new Error(
+                  "The ledger total exceeds the supported range.",
+                );
+              return sum + amount;
+            }, 0);
+          tx.set(ref.collection("financeState").doc("current"), {
+            collectedMinor: total(funds),
+            spentMinor: total(expenses),
+            openingBalanceMinor:
+              state.data()?.openingBalanceMinor ||
+              center.data().openingBalanceMinor ||
+              0,
+            currency,
+            version: (state.data()?.version || 0) + 1,
+            updatedAt: now(),
+          });
+          audit(tx, ref, user.uid, "finance.reconciled", {
+            fundCount: funds.size,
+            expenseCount: expenses.size,
+          });
+        });
+        return { ok: true };
+      }
+      if (action === "contentWrite") {
+        if (!["events", "forms"].includes(data.collection))
+          throw new Error("Invalid content collection.");
+        const target = ref
+          .collection(data.collection)
+          .doc(data.id ? validId(data.id) : db.collection("_").doc().id);
+        let clean;
+        let draftToken;
+        if (!data.remove && !data.publish) {
+          const p = data.payload || {};
+          clean = {
+            title: text(p.title, 150),
+            description: text(p.description || "", 2000, false),
+          };
+          if (data.collection === "events") {
+            clean = {
+              ...clean,
+              titleMl: text(p.titleMl || "", 150, false),
+              descriptionMl: text(p.descriptionMl || "", 2000, false),
+              eventLocal: p.eventLocal || p.eventAt,
+              location: text(p.location || "", 300, false),
+              repeat: p.repeat === "weekly" ? "weekly" : "once",
+            };
+          } else {
+            if (!Array.isArray(p.fields) || p.fields.length > 4)
+              throw new Error("Forms support up to 4 questions.");
+            const ids = new Set();
+            const fields = p.fields.map((f) => {
+              if (
+                ![
+                  "text",
+                  "textarea",
+                  "email",
+                  "tel",
+                  "number",
+                  "date",
+                  "select",
+                  "radio",
+                  "checkbox",
+                ].includes(f.type)
+              )
+                throw new Error("Invalid question type.");
+              const id = validId(f.id);
+              if (ids.has(id)) throw new Error("Question IDs must be unique.");
+              ids.add(id);
+              if (!Array.isArray(f.options) || f.options.length > 10)
+                throw new Error("Use up to 10 options per question.");
+              return {
+                id,
+                label: text(f.label, 200),
+                type: f.type,
+                required: f.required === true,
+                options: f.options.map((o) => text(o, 200)),
+              };
+            });
+            if (fields.reduce((n, field) => n + field.options.length, 0) > 20)
+              throw new Error("Use up to 20 choices across the whole form.");
+            clean = {
+              ...clean,
+              event: text(p.event || "", 150, false),
+              open: p.open === true,
+              fields,
+            };
+          }
+        }
+        await db.runTransaction(async (tx) => {
+          await permissions(tx, user.uid, ref.id, "content");
+          const old = await tx.get(target);
+          const center = await tx.get(ref);
+          const draftRef = ref
+            .collection(
+              data.collection === "events" ? "eventDrafts" : "formDrafts",
+            )
+            .doc(target.id);
+          const savedDraft = await tx.get(draftRef);
+          if (data.publish) {
+            if (!savedDraft.exists)
+              throw new Error("Save and review a draft first.");
+            if (data.token !== savedDraft.data().token)
+              throw new Error(
+                "The draft changed. Review the latest preview before publishing.",
+              );
+            checkVersion(
+              old.data()?.version || 0,
+              savedDraft.data().baseVersion,
+            );
+            clean = savedDraft.data().payload;
+          }
+          if (!data.remove && data.collection === "events")
+            clean = { ...clean, ...eventFields(clean, center.data().timezone) };
+          if (data.draft) {
+            checkVersion(old.data()?.version || 0, data.version || 0);
+            draftToken = db.collection("_").doc().id;
+            tx.set(draftRef, {
+              payload: clean,
+              token: draftToken,
+              baseVersion: old.data()?.version || 0,
+              authorUid: user.uid,
+              updatedAt: now(),
+            });
+          } else if (data.remove) {
+            tx.delete(target);
+            tx.delete(draftRef);
+          } else
+            tx.set(target, {
+              ...clean,
+              version: (old.data()?.version || 0) + 1,
+              createdAt: old.data()?.createdAt || now(),
+              updatedAt: now(),
+            });
+          if (data.publish) tx.delete(draftRef);
+          audit(
+            tx,
+            ref,
+            user.uid,
+            `${data.collection}.${data.remove ? "removed" : "saved"}`,
+            { recordId: target.id },
+          );
+        });
+        return { id: target.id, ...(draftToken ? { token: draftToken } : {}) };
+      }
+      if (action === "inviteMember") {
+        const address = email(data.email),
+          role = data.role;
+        if (!["admin", "finance", "editor"].includes(role))
+          throw new Error("Choose a staff role.");
+        await db.runTransaction(async (tx) => {
+          await permissions(tx, user.uid, ref.id, "team");
+          const center = await tx.get(ref);
+          const inviteId = db.collection("_").doc().id;
+          const invite = db.doc(`centerInvitations/${inviteId}`);
+          tx.set(invite, {
+            centerId: ref.id,
+            centerName: center.data().displayName,
+            email: address,
+            role,
+            status: "pending",
+            expiresAt: new Date(Date.now() + 7 * 86400000).toISOString(),
+            expiresAtMs: Date.now() + 7 * 86400000,
+          });
+          audit(tx, ref, user.uid, "member.invited", { email: address, role });
+        });
+        return { ok: true };
+      }
+      if (action === "removeMember") {
+        await db.runTransaction(async (tx) => {
+          await permissions(tx, user.uid, ref.id, "team");
+          const memberRef = ref.collection("members").doc(validId(data.uid)),
+            member = await tx.get(memberRef);
+          if (member.data()?.role === "owner")
+            throw new Error("Owner removal requires an ownership transfer.");
+          tx.delete(memberRef);
+          tx.delete(db.doc(`userCenters/${data.uid}/centers/${ref.id}`));
+          audit(tx, ref, user.uid, "member.removed", { memberUid: data.uid });
+        });
+        return { ok: true };
+      }
+      if (action === "transferOwnership") {
+        const uid = validId(data.uid);
+        await db.runTransaction(async (tx) => {
+          const actorRole = await permissions(tx, user.uid, ref.id, "team");
+          const recipientRef = ref.collection("members").doc(uid),
+            recipient = await tx.get(recipientRef);
+          if (!recipient.exists || uid === user.uid)
+            throw new Error("Select another existing team member.");
+          tx.update(recipientRef, { role: "owner" });
+          tx.set(db.doc(`userCenters/${uid}/centers/${ref.id}`), {
+            centerId: ref.id,
+            role: "owner",
+          });
+          if (actorRole !== "superadmin") {
+            tx.update(ref.collection("members").doc(user.uid), {
+              role: "admin",
+            });
+            tx.set(db.doc(`userCenters/${user.uid}/centers/${ref.id}`), {
+              centerId: ref.id,
+              role: "admin",
+            });
+          }
+          audit(tx, ref, user.uid, "ownership.transferred", {
+            newOwnerUid: uid,
+          });
+        });
+        return { ok: true };
+      }
+      if (action === "changeMemberRole") {
+        const uid = validId(data.uid);
+        if (!["admin", "finance", "editor"].includes(data.role))
+          throw new Error(
+            "Select a staff role. Transfer ownership separately.",
+          );
+        await db.runTransaction(async (tx) => {
+          await permissions(tx, user.uid, ref.id, "team");
+          const recipientRef = ref.collection("members").doc(uid),
+            recipient = await tx.get(recipientRef);
+          if (!recipient.exists || recipient.data().role === "owner")
+            throw new Error(
+              "Owner permissions require the ownership-transfer flow.",
+            );
+          tx.update(recipientRef, { role: data.role });
+          tx.set(db.doc(`userCenters/${uid}/centers/${ref.id}`), {
+            centerId: ref.id,
+            role: data.role,
+          });
+          audit(tx, ref, user.uid, "member.role-changed", {
+            memberUid: uid,
+            previousRole: recipient.data().role,
+            role: data.role,
+          });
+        });
+        return { ok: true };
+      }
+      if (action === "openingBalance") {
+        await db.runTransaction(async (tx) => {
+          await permissions(tx, user.uid, ref.id, "finance");
+          const center = await tx.get(ref),
+            stateRef = ref.collection("financeState").doc("current"),
+            state = await tx.get(stateRef);
+          if (state.exists)
+            throw new Error(
+              "The opening balance is locked after the ledger is started.",
+            );
+          const raw = String(data.amount),
+            negative = raw.startsWith("-"),
+            absolute = negative ? raw.slice(1) : raw;
+          const value =
+            Number(absolute) === 0
+              ? 0
+              : minorUnits(absolute, center.data().currency) *
+                (negative ? -1 : 1);
+          tx.set(stateRef, {
+            collectedMinor: 0,
+            spentMinor: 0,
+            openingBalanceMinor: value,
+            currency: center.data().currency,
+            version: 1,
+            updatedAt: now(),
+          });
+          tx.update(ref, { openingBalanceMinor: value });
+          audit(tx, ref, user.uid, "opening-balance.set");
+        });
+        return { ok: true };
+      }
+      if (action === "reverseEntry") {
+        if (!["funds", "expenses"].includes(data.kind))
+          throw new Error("Invalid ledger.");
+        const entryRef = ref.collection(data.kind).doc(validId(data.id));
+        await db.runTransaction(async (tx) => {
+          await permissions(tx, user.uid, ref.id, "finance");
+          const entry = await tx.get(entryRef),
+            stateRef = ref.collection("financeState").doc("current"),
+            state = await tx.get(stateRef);
+          if (!entry.exists || !state.exists)
+            throw new Error("Record not found.");
+          if (entry.data().reversedAt || entry.data().reverses)
+            throw new Error("This entry has already been corrected.");
+          const reason = text(data.reason, 1000),
+            currency = state.data().currency;
+          const amount =
+            entry.data().amountMinor ??
+            minorUnits(String(entry.data().amount), currency);
+          const field = data.kind === "funds" ? "collectedMinor" : "spentMinor";
+          tx.create(ref.collection(data.kind).doc(`reversal-${entry.id}`), {
+            amountMinor: -amount,
+            currency,
+            note: reason,
+            category: "Correction",
+            date: now(),
+            byUid: user.uid,
+            reverses: entry.id,
+          });
+          tx.update(entryRef, { reversedAt: now(), reversedBy: user.uid });
+          tx.update(stateRef, {
+            [field]: state.data()[field] - amount,
+            version: state.data().version + 1,
+            updatedAt: now(),
+          });
+          audit(tx, ref, user.uid, "ledger.reversed", {
+            entryId: entry.id,
+            kind: data.kind,
+          });
+        });
+        return { ok: true };
+      }
+      if (action === "settings") {
+        // Existing centers can keep their saved location without needing a new link.
+        const existing = await ref.get();
+        const location = data.fields?.mapsUrl
+          ? await resolveMapLocation(data.fields.mapsUrl)
+          : {
+              latitude: existing.data()?.latitude,
+              longitude: existing.data()?.longitude,
+              timezone: existing.data()?.timezone,
+            };
+        const fields = centerFields({ ...data.fields, ...location });
+        await db.runTransaction(async (tx) => {
+          await permissions(tx, user.uid, ref.id, "team");
+          const snap = await tx.get(ref),
+            old = snap.data();
+          const nextSlug = slug(data.fields.slug || old.slug);
+          const slugRef = db.doc(`centerSlugs/${nextSlug}`);
+          const mapping = await tx.get(slugRef);
+          const applicationRef = db.doc(`centerApplications/${ref.id}`);
+          const application = await tx.get(applicationRef);
+          if (mapping.exists && mapping.data().centerId !== ref.id)
+            throw new Error("This center URL is already taken.");
+          checkVersion(old.version, data.version);
+          if (fields.currency !== old.currency)
+            throw new Error("Currency is fixed when the center is created.");
+          tx.update(ref, {
+            ...fields,
+            slug: nextSlug,
+            searchName: fields.displayName.toLowerCase(),
+            status: data.published ? "published" : "draft",
+            version: old.version + 1,
+            updatedAt: now(),
+          });
+          if (!mapping.exists) tx.create(slugRef, { centerId: ref.id });
+          if (application.exists)
+            tx.update(applicationRef, {
+              centerStatus: data.published ? "published" : "draft",
+            });
+          audit(tx, ref, user.uid, "settings.updated");
+        });
+        return { ok: true };
+      }
+      if (action === "ledger") {
+        if (!["funds", "expenses"].includes(data.kind))
+          throw new Error("Invalid ledger.");
+        const entry = ref.collection(data.kind).doc(validId(data.id));
+        await db.runTransaction(async (tx) => {
+          await permissions(tx, user.uid, ref.id, "finance");
+          const center = await tx.get(ref),
+            existing = await tx.get(entry);
+          if (existing.exists) return;
+          const financeRef = ref.collection("financeState").doc("current"),
+            summary = await tx.get(financeRef);
+          const value = minorUnits(data.amount, center.data().currency);
+          const state = summary.data() || {
+            collectedMinor: 0,
+            spentMinor: 0,
+            openingBalanceMinor: center.data().openingBalanceMinor || 0,
+            version: 0,
+          };
+          const next = {
+            ...state,
+            [data.kind === "funds" ? "collectedMinor" : "spentMinor"]:
+              state[data.kind === "funds" ? "collectedMinor" : "spentMinor"] +
+              value,
+            version: state.version + 1,
+            currency: center.data().currency,
+            updatedAt: now(),
+          };
+          if (
+            ![
+              next.collectedMinor,
+              next.spentMinor,
+              next.openingBalanceMinor,
+            ].every(Number.isSafeInteger)
+          )
+            throw new Error("The ledger total exceeds the supported range.");
+          tx.create(entry, {
+            amountMinor: value,
+            currency: center.data().currency,
+            note: text(data.note || "", 1000, false),
+            publicDescription: text(data.publicDescription || "", 300, false),
+            category: text(data.category || "General", 80),
+            date: now(),
+            byUid: user.uid,
+          });
+          tx.set(financeRef, next);
+          audit(tx, ref, user.uid, "ledger.created", {
+            kind: data.kind,
+            entryId: entry.id,
+          });
+        });
+        return { ok: true };
+      }
+      if (["saveDraft", "publish", "restore"].includes(action)) {
+        const kind = data.kind;
+        if (!["prayer", "manual", "announcement", "finance"].includes(kind))
+          throw new Error("Invalid content type.");
+        const id = ["announcement", "manual"].includes(kind)
+          ? validId(data.id)
+          : kind;
+        const target =
+          kind === "prayer"
+            ? ref
+            : kind === "manual"
+              ? ref.collection("prayerTimes").doc(id)
+              : kind === "finance"
+                ? ref.collection("publicFinance").doc("current")
+                : ref.collection("announcements").doc(id);
+        const draftRef = ref.collection("contentDrafts").doc(`${kind}-${id}`);
+        await db.runTransaction(async (tx) => {
+          await permissions(
+            tx,
+            user.uid,
+            ref.id,
+            kind === "finance" ? "finance" : "content",
+          );
+          const live = await tx.get(target),
+            draft = await tx.get(draftRef);
+          const scheduleCenter =
+            kind === "prayer"
+              ? live
+              : kind === "manual"
+                ? await tx.get(ref)
+                : null;
+          if (
+            action === "publish" &&
+            scheduleCenter &&
+            draft.data()?.centerVersion !==
+              (scheduleCenter.data()?.version || 0)
+          )
+            throw new Error(
+              "The center location or settings changed. Save and review a new preview before publishing.",
+            );
+          if (
+            action === "publish" &&
+            (!draft.exists || data.token !== draft.data().token)
+          )
+            throw new Error(
+              "The draft changed. Review the latest preview before publishing.",
+            );
+          const version =
+            kind === "prayer"
+              ? live.data()?.prayerVersion || 0
+              : live.data()?.version || 0;
+          const revision =
+            action === "restore"
+              ? await tx.get(
+                  ref
+                    .collection("contentRevisions")
+                    .doc(validId(data.revisionId)),
+                )
+              : null;
+          const finance =
+            kind === "finance"
+              ? await tx.get(ref.collection("financeState").doc("current"))
+              : null;
+          if (
+            action === "restore" &&
+            (kind === "finance" ||
+              revision?.data()?.kind !== kind ||
+              revision.data().targetId !== id)
+          )
+            throw new Error("This revision cannot be restored here.");
+          let payload =
+            action === "saveDraft"
+              ? data.payload
+              : action === "restore"
+                ? revision.data().payload
+                : draft.data()?.payload;
+          if (kind === "prayer") payload = prayerSettings(payload);
+          else if (kind === "manual") {
+            payload = manualSchedule(payload);
+            for (const key of ["fajr", "dhuhr", "asr", "maghrib", "isha"]) {
+              zonedInstant(
+                payload.date,
+                payload[key].adhaan,
+                scheduleCenter.data().timezone,
+              );
+              zonedInstant(
+                payload.date,
+                payload[key].iqama,
+                scheduleCenter.data().timezone,
+              );
+            }
+            if (payload.date !== id)
+              throw new Error(
+                "The schedule date must match the selected date.",
+              );
+          } else if (kind === "announcement") {
+            payload = noticeFields(payload);
+            if (action !== "saveDraft" && payload.expiresAt <= now())
+              throw new Error(
+                "Set a new expiry before republishing this announcement.",
+              );
+          } else {
+            if (!finance?.exists)
+              throw new Error(
+                "Record a donation or expense before creating a report.",
+              );
+            const f = finance.data();
+            payload = {
+              currency: f.currency,
+              collectedMinor: f.collectedMinor,
+              spentMinor: f.spentMinor,
+              openingBalanceMinor: f.openingBalanceMinor,
+              balanceMinor:
+                f.openingBalanceMinor + f.collectedMinor - f.spentMinor,
+              ledgerVersion: f.version,
+            };
+            if (
+              action === "publish" &&
+              draft.data()?.payload?.ledgerVersion !== f.version
+            )
+              throw new Error(
+                "The ledger changed. Preview the updated report first.",
+              );
+          }
+          checkVersion(
+            version,
+            action === "publish" ? draft.data()?.baseVersion : data.version,
+          );
+          if (action === "saveDraft")
+            tx.set(draftRef, {
+              kind,
+              targetId: id,
+              payload,
+              token: db.collection("_").doc().id,
+              ...(scheduleCenter
+                ? { centerVersion: scheduleCenter.data()?.version || 0 }
+                : {}),
+              baseVersion: version,
+              authorUid: user.uid,
+              updatedAt: now(),
+            });
+          else {
+            const publication = {
+              ...payload,
+              version: version + 1,
+              updatedAt: now(),
+            };
+            if (kind === "prayer")
+              tx.update(target, {
+                prayer: payload,
+                prayerVersion: version + 1,
+                updatedAt: now(),
+              });
+            else tx.set(target, publication);
+            if (kind === "finance")
+              tx.create(
+                ref
+                  .collection("publicFinance")
+                  .doc(`report-${db.collection("_").doc().id}`),
+                publication,
+              );
+            tx.create(ref.collection("contentRevisions").doc(), {
+              kind,
+              targetId: id,
+              payload,
+              version: version + 1,
+              authorUid: user.uid,
+              at: now(),
+              restoredFrom: data.revisionId || null,
+            });
+            tx.delete(draftRef);
+            audit(tx, ref, user.uid, `${kind}.published`);
+          }
+        });
+        return { ok: true };
+      }
+      throw new Error("Unknown action.");
+    } catch (error) {
+      if (error instanceof HttpsError) throw error;
+      throw new HttpsError(
+        "failed-precondition",
+        error.message || "Unable to complete this action.",
+      );
+    }
+  };
+}

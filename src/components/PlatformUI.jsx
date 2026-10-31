@@ -7,6 +7,7 @@ import ThemeToggle from './ThemeToggle'
 import Button from './Button'
 import { inputClass } from './Field'
 import { act } from '../lib/platform'
+import { useManagementShell } from './ManagementShell'
 
 export function Shell({
   children,
@@ -18,11 +19,13 @@ export function Shell({
   lang,
   sidebar,
 }) {
+  const managed = useManagementShell()
+  const localSidebar = !managed && sidebar
   return (
     <>
       <PlatformHeader />
-      <main className={sidebar ? 'platform-page dashboard-layout' : 'platform-page'} dir={dir} lang={lang}>
-        {sidebar && <aside className="dashboard-sidebar">{sidebar}</aside>}
+      <main className={localSidebar ? 'platform-page dashboard-layout' : 'platform-page'} dir={dir} lang={lang}>
+        {localSidebar && <aside className="dashboard-sidebar">{localSidebar}</aside>}
         <div className="dashboard-content">
         <header className="platform-heading">
           <div>
@@ -45,6 +48,7 @@ export function PlatformHeader() {
   const { user, profile, logout } = useAuth()
   const context = useCenter()
   const { language, setLanguage } = useLanguage()
+  const managed = useManagementShell()
   const [open, setOpen] = useState(false)
   const mine = profile?.centers?.find((c) => c.id === context?.centerId)
   return (
@@ -70,6 +74,7 @@ export function PlatformHeader() {
           <NavLink to="/centers">Find a center</NavLink>
           <NavLink to="/quran">Quran</NavLink>
           {!user && <NavLink to="/register">Register a center</NavLink>}
+          {!managed && <>
           {user && <NavLink to="/onboarding">My requests</NavLink>}
           {user && !!profile?.centers?.length && <NavLink to="/centers">My centers</NavLink>}
           {profile?.role === 'superadmin' && (
@@ -78,6 +83,7 @@ export function PlatformHeader() {
           {context && (mine || profile?.role === 'superadmin') && (
             <Link to={`${context.base}/admin`}>Manage center</Link>
           )}
+          </>}
         </nav>
         <div className="platform-account">
           <select
@@ -93,7 +99,7 @@ export function PlatformHeader() {
           </select>
           <ThemeToggle />
           {user ? (
-            <Button variant="ghost" onClick={logout}>
+            <Button className={managed ? 'management-header-signout' : undefined} variant="ghost" onClick={logout}>
               Sign out
             </Button>
           ) : (
@@ -198,6 +204,7 @@ export function CenterFields({
   value,
   onChange,
   request = false,
+  designatedAdmin = true,
   currencyLocked = false,
 }) {
   const set = (key) => (val) => onChange({ ...value, [key]: val })
@@ -310,13 +317,13 @@ export function CenterFields({
             pattern="[a-z0-9]+(-[a-z0-9]+)*"
             required
           />
-          <Input
+          {designatedAdmin && <Input
             label="Designated admin email"
             type="email"
             value={value.designatedAdminEmail}
             onChange={set('designatedAdminEmail')}
             required
-          />
+          />}
         </>
       )}
       {!request && (
@@ -381,7 +388,7 @@ function MapLocationField({ value, onChange, required }) {
       setError('')
       onChange({ ...value, mapsUrl, latitude: '', longitude: '', timezone: '' })
     }} />
-    <p className="platform-hint">Open your masjid or center in Google Maps, select Share, and copy the link. We’ll find its location and timezone automatically.</p>
+    <p className="platform-hint">Open your center or dropped pin in Google Maps and copy the full address from your browser. If you have a short share link, open it first. The full place URL must include coordinates; we’ll find the timezone without a paid map service.</p>
     <Button type="button" variant="outline" loading={busy} disabled={!value.mapsUrl} onClick={check}>Check location</Button>
     {error && <Message error>{error}</Message>}
     {value.latitude !== '' && value.latitude != null && value.longitude !== '' && value.longitude != null && <p className="platform-hint" role="status">

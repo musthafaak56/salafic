@@ -1,25 +1,304 @@
 rules_version = '2';
-// Server-controlled center records. Public projections contain no private ledger fields.
+// Spark-only application: browser transactions, authoritative server-side Rules.
 // users: uid/name/email/photoURL/createdAt. Roles live ONLY in platformRoles and members.
-// Operational writes go through validated callable functions; default deny everywhere else.
+// Requests belong to submitters; invitations belong to verified email recipients.
+// Center members: uid/email/role/joinedAt/invitationId. userCenters is a linked index.
+// Public center projections are separate from private ledgers and submissions.
+// Private education: classes(name/kind/schedule); teachers(name/classIds);
+// students(name/kind/classIds). All have version and createdAt/updatedAt timestamps.
+// Madrasa students: one madrasa class. Center students: 1–6 center classes.
+// Teachers: 0–6 classes of either kind. Class/student kinds are immutable.
+// Optional private phone (7–15 digits). Center timing: date/start/end/minutes/gap.
+// Student classTimings map: assigned class IDs -> position/minutes (0 uses class default).
+// hifdhSchedules contains ONLY AES-GCM ciphertext and crypto/session metadata.
+// educationPublications holds private session keys; educationAttendance is manager-readable only.
 service cloud.firestore {
   match /databases/{database}/documents {
     function signedIn() { return request.auth != null; }
     function self(uid) { return signedIn() && request.auth.uid == uid; }
+    function verified() { return signedIn() && request.auth.token.email_verified == true; }
     function superAdmin() {
-      return signedIn() && exists(/databases/$(database)/documents/platformRoles/$(request.auth.uid))
+      return verified() && exists(/databases/$(database)/documents/platformRoles/$(request.auth.uid))
         && get(/databases/$(database)/documents/platformRoles/$(request.auth.uid)).data.role == 'superadmin';
     }
     function memberRole(id) { return get(/databases/$(database)/documents/masjids/$(id)/members/$(request.auth.uid)).data.role; }
     function member(id) {
-      return signedIn() && exists(/databases/$(database)/documents/masjids/$(id))
+      return verified() && exists(/databases/$(database)/documents/masjids/$(id))
         && exists(/databases/$(database)/documents/masjids/$(id)/members/$(request.auth.uid));
     }
     function staff(id) { return superAdmin() || member(id); }
     function finance(id) { return superAdmin() || (member(id) && memberRole(id) in ['owner','admin','finance']); }
     function editor(id) { return superAdmin() || (member(id) && memberRole(id) in ['owner','admin','editor']); }
     function owner(id) { return superAdmin() || (member(id) && memberRole(id) == 'owner'); }
+    function educationManager(id) {
+      return exists(/databases/$(database)/documents/masjids/$(id))
+        && (superAdmin() || (verified() && memberRole(id) in ['owner','admin']));
+    }
+    function educationBase(d) {
+      return str(d.name,120) && d.name.size() > 0 && d.version is int && d.version > 0
+        && d.createdAt is timestamp && d.updatedAt == request.time;
+    }
+    function educationClass(d) {
+      return d.keys().hasOnly(['name','kind','schedule','timing','version','createdAt','updatedAt'])
+        && educationBase(d) && d.kind in ['madrasa','center'] && str(d.schedule,300)
+        && (!('timing' in d) || (d.kind == 'center' && classTiming(d.timing)));
+    }
+    function classTiming(t) {
+      return t is map && t.keys().hasOnly(['date','start','end','minutes','gap'])
+        && str(t.date,10) && t.date.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$')
+        && clock(t.start) && clock(t.end) && t.end > t.start
+        && t.minutes is int && t.minutes >= 1 && t.minutes <= 240
+        && t.gap is int && t.gap >= 0 && t.gap <= 240;
+    }
+    function studentTiming(t) {
+      return t is map && t.keys().hasOnly(['position','minutes'])
+        && t.position is number && t.position >= -1000000000000000 && t.position <= 1000000000000000
+        && t.minutes is int && t.minutes >= 0 && t.minutes <= 240;
+    }
+    function studentTimings(d) {
+      let t = d.classTimings;
+      let ids = d.classIds;
+      return t is map && t.keys().hasOnly(ids)
+        && (ids.size()<1 || !(ids[0] in t) || studentTiming(t[ids[0]]))
+        && (ids.size()<2 || !(ids[1] in t) || studentTiming(t[ids[1]]))
+        && (ids.size()<3 || !(ids[2] in t) || studentTiming(t[ids[2]]))
+        && (ids.size()<4 || !(ids[3] in t) || studentTiming(t[ids[3]]))
+        && (ids.size()<5 || !(ids[4] in t) || studentTiming(t[ids[4]]))
+        && (ids.size()<6 || !(ids[5] in t) || studentTiming(t[ids[5]]));
+    }
+    function assignedClass(id, classId, kind) {
+      return str(classId,120) && classId.matches('^[a-zA-Z0-9_-]{1,120}$')
+        && get(/databases/$(database)/documents/masjids/$(id)/educationClasses/$(classId)).data.kind in (kind == 'teacher' ? ['madrasa','center'] : [kind]);
+    }
+    function classAssignments(id, ids, kind, previous) {
+      // Existing assignments were validated on creation; program types are immutable.
+      // Only new relationships need a lookup, keeping multi-class edits within limits.
+      return ids is list && ids.size() <= 6 && ids.toSet().size() == ids.size()
+        && (ids.size()<1 || ids[0] in previous || assignedClass(id,ids[0],kind))
+        && (ids.size()<2 || ids[1] in previous || assignedClass(id,ids[1],kind))
+        && (ids.size()<3 || ids[2] in previous || assignedClass(id,ids[2],kind))
+        && (ids.size()<4 || ids[3] in previous || assignedClass(id,ids[3],kind))
+        && (ids.size()<5 || ids[4] in previous || assignedClass(id,ids[4],kind))
+        && (ids.size()<6 || ids[5] in previous || assignedClass(id,ids[5],kind));
+    }
+    function educationPerson(id,d,student,updating) {
+      return d.keys().hasOnly(student ? ['name','kind','classIds','phone','classTimings','version','createdAt','updatedAt'] : ['name','classIds','phone','version','createdAt','updatedAt'])
+        && educationBase(d)
+        && ((updating && d.classIds == resource.data.classIds) || classAssignments(id,d.classIds,student ? d.kind : 'teacher',updating ? resource.data.classIds : []))
+        && (!('phone' in d) || (str(d.phone,15) && (d.phone == '' || d.phone.matches('^[0-9]{7,15}$'))))
+        && (!('classTimings' in d) || studentTimings(d))
+        && (!student || (d.kind in ['madrasa','center'] && (d.kind == 'madrasa' ? d.classIds.size() == 1 : d.classIds.size() >= 1)));
+    }
+    function educationRevision(d) {
+      return d.createdAt == resource.data.createdAt && d.version == resource.data.version + 1;
+    }
+    function publication(id,classId,d) {
+      return d.keys().hasOnly(['key','date','sessionAt','publishedAt'])
+        && str(d.key,36) && d.key.size() == 36 && str(d.date,10)
+        && d.date == get(/databases/$(database)/documents/masjids/$(id)/educationClasses/$(classId)).data.timing.date
+        && d.sessionAt is timestamp && d.sessionAt > request.time && d.publishedAt == request.time
+        && assignedClass(id,classId,'center');
+    }
+    function encryptedSchedule(id,classId,d) {
+      return d.keys().hasOnly(['salt','iv','ciphertext','sessionAt','updatedAt'])
+        && str(d.salt,24) && d.salt.size() == 24 && str(d.iv,16) && d.iv.size() == 16
+        && str(d.ciphertext,250000) && d.ciphertext.size() > 16 && d.updatedAt == request.time
+        && d.sessionAt == getAfter(/databases/$(database)/documents/masjids/$(id)/educationPublications/$(classId)).data.sessionAt;
+    }
+    function attendance(id,recordId,d) {
+      let session = get(/databases/$(database)/documents/masjids/$(id)/educationPublications/$(d.classId)).data;
+      let student = get(/databases/$(database)/documents/masjids/$(id)/educationStudents/$(d.studentId)).data;
+      return d.keys().hasOnly(['classId','studentId','date','phone','key','attending','updatedAt'])
+        && str(d.classId,120) && d.classId.matches('^[a-zA-Z0-9_-]{1,120}$')
+        && str(d.studentId,120) && d.studentId.matches('^[a-zA-Z0-9_-]{1,120}$')
+        && recordId == d.classId + '_' + d.studentId + '_' + d.date
+        && d.date == session.date && d.key == session.key && session.sessionAt > request.time
+        && d.phone == student.phone && str(d.phone,15) && d.phone.size() >= 7
+        && student.kind == 'center' && d.classId in student.classIds
+        && d.attending == true && d.updatedAt == request.time && published(id);
+    }
     function published(id) { return get(/databases/$(database)/documents/masjids/$(id)).data.status == 'published'; }
+    function str(s, n) { return s is string && s.size() <= n; }
+    function iso(s) { return str(s, 30) && s.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}T.*Z$'); }
+    function amount(n) { return n is int && n >= -9000000000000000 && n <= 9000000000000000; }
+    function role(r) { return r in ['owner','admin','finance','editor']; }
+    function clock(t) { return str(t,5) && t.matches('^([01][0-9]|2[0-3]):[0-5][0-9]$'); }
+    function validLocation(d) {
+      return str(d.displayName,120) && d.displayName.size() > 0 && d.type in ['masjid','center']
+        && str(d.city,100) && str(d.address,300) && str(d.countryCode,2)
+        && d.latitude is number && d.latitude >= -90 && d.latitude <= 90
+        && d.longitude is number && d.longitude >= -180 && d.longitude <= 180
+        && str(d.mapsUrl,8192) && str(d.timezone,80) && str(d.currency,3)
+        && str(d.locale,35) && d.timeFormat in ['12','24']
+        && d.hijriAdjustment is int && d.hijriAdjustment >= -2 && d.hijriAdjustment <= 2
+        && d.modules.keys().hasOnly(['finances','events','forms'])
+        && d.modules.finances is bool && d.modules.events is bool && d.modules.forms is bool
+        && str(d.description,1000) && str(d.logoUrl,2000) && str(d.coverUrl,2000)
+        && str(d.websiteUrl,2000) && str(d.contactEmail,254) && str(d.phone,40)
+        && str(d.slug,80) && d.slug.matches('^[a-z0-9]+(-[a-z0-9]+)*$');
+    }
+    function minuteMap(m, lower) {
+      return m.keys().hasOnly(['fajr','dhuhr','asr','maghrib','isha'])
+        && m.fajr is int && m.fajr >= lower && m.fajr <= 180
+        && m.dhuhr is int && m.dhuhr >= lower && m.dhuhr <= 180
+        && m.asr is int && m.asr >= lower && m.asr <= 180
+        && m.maghrib is int && m.maghrib >= lower && m.maghrib <= 180
+        && m.isha is int && m.isha >= lower && m.isha <= 180;
+    }
+    function validPrayer(d) {
+      return d.keys().hasOnly(['method','madhab','highLatitude','offsets','gaps','jumuah'])
+        && d.method in ['MuslimWorldLeague','NorthAmerica','Karachi','UmmAlQura','Egyptian','Dubai','Singapore','MoonsightingCommittee']
+        && d.madhab in ['Hanafi','Shafi'] && d.highLatitude in ['MiddleOfTheNight','SeventhOfTheNight','TwilightAngle']
+        && minuteMap(d.offsets,-180) && minuteMap(d.gaps,0) && d.jumuah is list && d.jumuah.size() <= 6
+        && (d.jumuah.size()<1 || clock(d.jumuah[0])) && (d.jumuah.size()<2 || clock(d.jumuah[1]))
+        && (d.jumuah.size()<3 || clock(d.jumuah[2])) && (d.jumuah.size()<4 || clock(d.jumuah[3]))
+        && (d.jumuah.size()<5 || clock(d.jumuah[4])) && (d.jumuah.size()<6 || clock(d.jumuah[5]));
+    }
+    function validCenter(d) {
+      return d.keys().hasOnly(['displayName','type','city','countryCode','address','latitude','longitude','mapsUrl','timezone','currency','locale','timeFormat','hijriAdjustment','modules','description','logoUrl','coverUrl','websiteUrl','contactEmail','phone','slug','searchName','status','version','prayer','prayerVersion','openingBalanceMinor','createdAt','updatedAt','madrasa','committee'])
+        && validLocation(d) && str(d.searchName,120) && d.status in ['draft','published']
+        && d.version is int && d.version > 0 && validPrayer(d.prayer) && amount(d.openingBalanceMinor)
+        && iso(d.createdAt) && (!('updatedAt' in d) || iso(d.updatedAt))
+        && (!('prayerVersion' in d) || (d.prayerVersion is int && d.prayerVersion > 0))
+        && (!('madrasa' in d) || validMadrasa(d.madrasa)) && (!('committee' in d) || validCommittee(d.committee));
+    }
+    function validApplication(d) {
+      return d.keys().hasOnly(['displayName','type','city','countryCode','address','latitude','longitude','mapsUrl','timezone','currency','locale','timeFormat','hijriAdjustment','modules','description','logoUrl','coverUrl','websiteUrl','contactEmail','phone','slug','designatedAdminEmail','submitterUid','submitterEmail','status','createdAt','updatedAt','history','feedback','reviewerUid','centerId','adminStatus','centerStatus'])
+        && validLocation(d) && str(d.designatedAdminEmail,254) && str(d.submitterEmail,254) && str(d.submitterUid,128)
+        && d.status in ['pending','approved','rejected','changes_requested'] && iso(d.createdAt) && iso(d.updatedAt)
+        && str(d.feedback,2000) && validHistoryUpdate(d.history)
+        && (!('reviewerUid' in d) || str(d.reviewerUid,128)) && (!('centerId' in d) || str(d.centerId,120))
+        && (!('adminStatus' in d) || d.adminStatus in ['invited','active']) && (!('centerStatus' in d) || d.centerStatus in ['draft','published']);
+    }
+    function validCenterUpdate(d) {
+      let changed = d.diff(resource.data).affectedKeys();
+      return changed.hasOnly(['madrasa','version','updatedAt']) ? (validMadrasa(d.madrasa) && d.version is int && iso(d.updatedAt))
+        : changed.hasOnly(['committee','version','updatedAt']) ? (validCommittee(d.committee) && d.version is int && iso(d.updatedAt))
+        : changed.hasOnly(['prayer','prayerVersion','updatedAt']) ? (validPrayer(d.prayer) && d.prayerVersion is int && iso(d.updatedAt))
+        : changed.hasOnly(['openingBalanceMinor']) ? amount(d.openingBalanceMinor)
+        : (changed.hasOnly(['displayName','type','city','countryCode','address','latitude','longitude','mapsUrl','timezone','currency','locale','timeFormat','hijriAdjustment','modules','description','logoUrl','coverUrl','websiteUrl','contactEmail','phone','slug','searchName','status','version','updatedAt'])
+          && validLocation(d) && str(d.searchName,120) && d.status in ['draft','published'] && d.version is int && iso(d.updatedAt));
+    }
+    function validApplicationUpdate(d) {
+      let changed = d.diff(resource.data).affectedKeys();
+      return (changed.hasOnly(['adminStatus']) && d.adminStatus == 'active')
+        || (changed.hasOnly(['centerStatus']) && d.centerStatus in ['draft','published'])
+        || validApplication(d);
+    }
+    function validHistoryUpdate(h) {
+      return h is list && h.size() <= 50 && (resource == null ? (h.size() == 1 && validHistory(h))
+        : (h.size() == resource.data.history.size() + 1 && h.hasAll(resource.data.history) && validHistory(h.removeAll(resource.data.history))));
+    }
+    function validInvite(d) {
+      return d.keys().hasOnly(['centerId','centerName','email','role','status','applicationId','expiresAt','expiresAtMs','acceptedAt','acceptedBy'])
+        && str(d.centerId,120) && str(d.centerName,120) && str(d.email,254) && role(d.role)
+        && d.status in ['pending','accepted'] && iso(d.expiresAt) && d.expiresAtMs is int
+        && (!('applicationId' in d) || d.applicationId == d.centerId)
+        && (!('acceptedAt' in d) || iso(d.acceptedAt)) && (!('acceptedBy' in d) || str(d.acceptedBy,128));
+    }
+    function claimable(i) {
+      return verified() && i.email == request.auth.token.email.lower() && i.status == 'pending'
+        && timestamp.value(i.expiresAtMs) > request.time;
+    }
+    function validMember(d, uid) {
+      return d.keys().hasOnly(['uid','email','role','joinedAt','invitationId']) && d.uid == uid
+        && str(d.email,254) && role(d.role) && iso(d.joinedAt) && str(d.invitationId,120);
+    }
+    function claimMember(id, uid, d) {
+      let before = get(/databases/$(database)/documents/centerInvitations/$(d.invitationId)).data;
+      let after = getAfter(/databases/$(database)/documents/centerInvitations/$(d.invitationId)).data;
+      return self(uid) && claimable(before) && before.centerId == id && d.email == before.email && d.role == before.role
+        && after.status == 'accepted' && after.acceptedBy == uid;
+    }
+    function validFinance(d) {
+      return d.keys().hasOnly(['currency','collectedMinor','spentMinor','openingBalanceMinor','balanceMinor','ledgerVersion','version','updatedAt'])
+        && str(d.currency,3) && amount(d.collectedMinor) && amount(d.spentMinor) && amount(d.openingBalanceMinor)
+        && d.version is int && d.version > 0 && iso(d.updatedAt)
+        && (!('balanceMinor' in d) || (amount(d.balanceMinor) && d.balanceMinor == d.openingBalanceMinor + d.collectedMinor - d.spentMinor))
+        && (!('ledgerVersion' in d) || (d.ledgerVersion is int && d.ledgerVersion > 0));
+    }
+    function validLedger(d) {
+      return d.keys().hasOnly(['amountMinor','currency','note','publicDescription','category','date','byUid','reverses','reversedAt','reversedBy'])
+        && amount(d.amountMinor) && d.amountMinor != 0 && str(d.currency,3) && str(d.note,1000)
+        && str(d.category,80) && iso(d.date) && str(d.byUid,128)
+        && (!('publicDescription' in d) || str(d.publicDescription,300))
+        && (!('reverses' in d) || str(d.reverses,120))
+        && (!('reversedAt' in d) || iso(d.reversedAt)) && (!('reversedBy' in d) || str(d.reversedBy,128));
+    }
+    function validNotice(d) {
+      return d.keys().hasOnly(['title','message','startsAt','expiresAt','priority','surfaces','version','updatedAt','archivedAt'])
+        && str(d.title,150) && str(d.message,2000) && iso(d.startsAt) && iso(d.expiresAt) && d.startsAt < d.expiresAt
+        && d.priority in ['urgent','normal'] && d.surfaces is list && d.surfaces.size() > 0 && d.surfaces.size() <= 2
+        && d.surfaces.hasOnly(['home','tv']) && (!('version' in d) || d.version is int)
+        && (!('updatedAt' in d) || iso(d.updatedAt)) && (!('archivedAt' in d) || iso(d.archivedAt));
+    }
+    function times(d) { return d.keys().hasOnly(['adhaan','iqama']) && clock(d.adhaan) && clock(d.iqama); }
+    function validManual(d) {
+      return d.keys().hasOnly(['date','fajr','dhuhr','asr','maghrib','isha','version','updatedAt']) && str(d.date,10)
+        && times(d.fajr) && times(d.dhuhr) && times(d.asr) && times(d.maghrib) && times(d.isha)
+        && (!('version' in d) || d.version is int) && (!('updatedAt' in d) || iso(d.updatedAt));
+    }
+    function payload(kind, d) {
+      return kind == 'prayer' ? validPrayer(d) : kind == 'manual' ? validManual(d)
+        : kind == 'announcement' ? validNotice(d) : kind == 'finance' ? validFinancePayload(d) : false;
+    }
+    function validFinancePayload(d) {
+      return d.keys().hasOnly(['currency','collectedMinor','spentMinor','openingBalanceMinor','balanceMinor','ledgerVersion'])
+        && str(d.currency,3) && amount(d.collectedMinor) && amount(d.spentMinor) && amount(d.openingBalanceMinor)
+        && amount(d.balanceMinor) && d.balanceMinor == d.openingBalanceMinor + d.collectedMinor - d.spentMinor
+        && d.ledgerVersion is int && d.ledgerVersion > 0;
+    }
+    function validDraft(d) {
+      return d.keys().hasOnly(['kind','targetId','payload','token','centerVersion','baseVersion','authorUid','updatedAt'])
+        && payload(d.kind,d.payload) && str(d.targetId,120) && str(d.token,120) && d.baseVersion is int
+        && d.authorUid == request.auth.uid && iso(d.updatedAt) && (!('centerVersion' in d) || d.centerVersion is int);
+    }
+    function history0(a) { return (a.size() <= 0 || (historyItem(a[0]) && true)); }
+    function validHistory(a) { return a is list && a.size() <= 1 && history0(a); }
+    function classes0(a) { return (a.size() <= 0 || (classItem(a[0]) && (a.size() <= 1 || (classItem(a[1]) && (a.size() <= 2 || (classItem(a[2]) && (a.size() <= 3 || (classItem(a[3]) && (a.size() <= 4 || (classItem(a[4]) && (a.size() <= 5 || (classItem(a[5]) && (a.size() <= 6 || (classItem(a[6]) && (a.size() <= 7 || (classItem(a[7]) && true)))))))))))))))); }
+    function validClasses(a) { return a is list && a.size() <= 8 && classes0(a); }
+    function members0(a) { return (a.size() <= 0 || (committeeItem(a[0]) && (a.size() <= 1 || (committeeItem(a[1]) && (a.size() <= 2 || (committeeItem(a[2]) && (a.size() <= 3 || (committeeItem(a[3]) && (a.size() <= 4 || (committeeItem(a[4]) && (a.size() <= 5 || (committeeItem(a[5]) && (a.size() <= 6 || (committeeItem(a[6]) && (a.size() <= 7 || (committeeItem(a[7]) && (a.size() <= 8 || (committeeItem(a[8]) && (a.size() <= 9 || (committeeItem(a[9]) && true)))))))))))))))))))); }
+    function members10(a) { return (a.size() <= 10 || (committeeItem(a[10]) && (a.size() <= 11 || (committeeItem(a[11]) && true)))); }
+    function validMembers(a) { return a is list && a.size() <= 12 && members0(a) && (a.size() <= 10 || members10(a)); }
+    function questions0(a) { return (a.size() <= 0 || (questionItem(a[0]) && (a.size() <= 1 || (questionItem(a[1]) && (a.size() <= 2 || (questionItem(a[2]) && (a.size() <= 3 || (questionItem(a[3]) && (a.size() <= 4 || (questionItem(a[4]) && (a.size() <= 5 || (questionItem(a[5]) && (a.size() <= 6 || (questionItem(a[6]) && (a.size() <= 7 || (questionItem(a[7]) && true)))))))))))))))); }
+    function validQuestions(a) { return a is list && a.size() <= 4 && questions0(a); }
+    function options0(a) { return (a.size() <= 0 || (optionItem(a[0]) && (a.size() <= 1 || (optionItem(a[1]) && (a.size() <= 2 || (optionItem(a[2]) && (a.size() <= 3 || (optionItem(a[3]) && (a.size() <= 4 || (optionItem(a[4]) && (a.size() <= 5 || (optionItem(a[5]) && (a.size() <= 6 || (optionItem(a[6]) && (a.size() <= 7 || (optionItem(a[7]) && (a.size() <= 8 || (optionItem(a[8]) && (a.size() <= 9 || (optionItem(a[9]) && true)))))))))))))))))))); }
+    function optionTypes(a) {
+      return (a.size() < 1 || a[0] is string) && (a.size() < 2 || a[1] is string)
+        && (a.size() < 3 || a[2] is string) && (a.size() < 4 || a[3] is string)
+        && (a.size() < 5 || a[4] is string) && (a.size() < 6 || a[5] is string)
+        && (a.size() < 7 || a[6] is string) && (a.size() < 8 || a[7] is string)
+        && (a.size() < 9 || a[8] is string) && (a.size() < 10 || a[9] is string);
+    }
+    // Round-trip comparison rejects non-string elements without per-choice calls.
+    // Choices are single-line labels, matching the editor's one-choice-per-line input.
+    function validOptions(a) { return a is list && a.size() <= 10 && (a.size() == 0 ? true : (a.join('').size() <= 2000 && a.join('\n').split('\n') == a)); }
+    function historyItem(d) { return d.keys().hasOnly(['status','at','actor','feedback']) && d.status in ['pending','approved','rejected','changes_requested'] && iso(d.at) && str(d.actor,128) && (!('feedback' in d) || str(d.feedback,2000)); }
+    function classItem(d) { return d.keys().hasOnly(['name','schedule','teacher']) && str(d.name,120) && str(d.schedule,300) && str(d.teacher,120); }
+    function committeeItem(d) { return d.keys().hasOnly(['name','role']) && str(d.name,120) && str(d.role,120); }
+    function optionItem(d) { return d is string; }
+    function questionItem(d) { return d.keys().hasOnly(['id','label','type','required','options']) && str(d.id,120) && str(d.label,200) && d.type in ['text','textarea','email','tel','number','date','select','radio','checkbox'] && d.required is bool && validOptions(d.options); }
+    function validMadrasa(d) { return d.keys().hasOnly(['name','description','contactEmail','phone','classes']) && str(d.name,120) && str(d.description,3000) && str(d.contactEmail,254) && str(d.phone,40) && validClasses(d.classes); }
+    function validCommittee(d) { return d.keys().hasOnly(['description','members']) && str(d.description,3000) && validMembers(d.members); }
+    function validEvent(d) { return d.keys().hasOnly(['title','description','titleMl','descriptionMl','eventLocal','eventAt','timezone','location','repeat','version','createdAt','updatedAt']) && str(d.title,150) && str(d.description,2000) && str(d.titleMl,150) && str(d.descriptionMl,2000) && str(d.eventLocal,16) && iso(d.eventAt) && str(d.timezone,80) && str(d.location,300) && d.repeat in ['once','weekly'] && (!('version' in d) || d.version is int) && (!('createdAt' in d) || iso(d.createdAt)) && (!('updatedAt' in d) || iso(d.updatedAt)); }
+    function choiceCount(fields,i) { return fields.size() <= i ? 0 : fields[i].options.size(); }
+    function totalChoices(fields) { return choiceCount(fields,0) + choiceCount(fields,1) + choiceCount(fields,2) + choiceCount(fields,3); }
+    function validForm(d) { return d.keys().hasOnly(['title','description','event','open','fields','version','createdAt','updatedAt']) && str(d.title,150) && str(d.description,2000) && str(d.event,150) && d.open is bool && validQuestions(d.fields) && totalChoices(d.fields) <= 20 && (!('version' in d) || d.version is int) && (!('createdAt' in d) || iso(d.createdAt)) && (!('updatedAt' in d) || iso(d.updatedAt)); }
+    function validContentDraft(d, kind) { return d.keys().hasOnly(['payload','token','baseVersion','authorUid','updatedAt']) && str(d.token,120) && d.baseVersion is int && d.authorUid == request.auth.uid && iso(d.updatedAt) && (kind == 'events' ? validEvent(d.payload) : kind == 'forms' ? validForm(d.payload) : false); }
+    function answerKey(fields,i) { return fields.size() > i ? fields[i].id : ''; }
+    function answerValid(answers, fields, i) {
+      let f = fields[i];
+      let a = answers[f.id];
+      return (f.type == 'checkbox' && a is list && a.size() <= 50 && a.hasOnly(f.options) && (!f.required || a.size() > 0))
+        || (f.type != 'checkbox' && str(a,2000) && (!f.required || a.size() > 0)
+          && (!(f.type in ['radio','select']) || a == '' || a in f.options));
+    }
+    function answers0(a,f) { return (f.size() <= 0 || answerValid(a,f,0)) && (f.size() <= 1 || answerValid(a,f,1)) && (f.size() <= 2 || answerValid(a,f,2)) && (f.size() <= 3 || answerValid(a,f,3)) && (f.size() <= 4 || answerValid(a,f,4)) && (f.size() <= 5 || answerValid(a,f,5)) && (f.size() <= 6 || answerValid(a,f,6)) && (f.size() <= 7 || answerValid(a,f,7)) && (f.size() <= 8 || answerValid(a,f,8)) && (f.size() <= 9 || answerValid(a,f,9)); }
+    function answers10(a,f) { return (f.size() <= 10 || answerValid(a,f,10)) && (f.size() <= 11 || answerValid(a,f,11)) && (f.size() <= 12 || answerValid(a,f,12)) && (f.size() <= 13 || answerValid(a,f,13)) && (f.size() <= 14 || answerValid(a,f,14)) && (f.size() <= 15 || answerValid(a,f,15)) && (f.size() <= 16 || answerValid(a,f,16)) && (f.size() <= 17 || answerValid(a,f,17)) && (f.size() <= 18 || answerValid(a,f,18)) && (f.size() <= 19 || answerValid(a,f,19)); }
+    function answers20(a,f) { return (f.size() <= 20 || answerValid(a,f,20)) && (f.size() <= 21 || answerValid(a,f,21)) && (f.size() <= 22 || answerValid(a,f,22)) && (f.size() <= 23 || answerValid(a,f,23)) && (f.size() <= 24 || answerValid(a,f,24)) && (f.size() <= 25 || answerValid(a,f,25)) && (f.size() <= 26 || answerValid(a,f,26)) && (f.size() <= 27 || answerValid(a,f,27)) && (f.size() <= 28 || answerValid(a,f,28)) && (f.size() <= 29 || answerValid(a,f,29)); }
+    function answers30(a,f) { return (f.size() <= 30 || answerValid(a,f,30)) && (f.size() <= 31 || answerValid(a,f,31)) && (f.size() <= 32 || answerValid(a,f,32)) && (f.size() <= 33 || answerValid(a,f,33)) && (f.size() <= 34 || answerValid(a,f,34)) && (f.size() <= 35 || answerValid(a,f,35)) && (f.size() <= 36 || answerValid(a,f,36)) && (f.size() <= 37 || answerValid(a,f,37)) && (f.size() <= 38 || answerValid(a,f,38)) && (f.size() <= 39 || answerValid(a,f,39)); }
+    function answers40(a,f) { return (f.size() <= 40 || answerValid(a,f,40)) && (f.size() <= 41 || answerValid(a,f,41)) && (f.size() <= 42 || answerValid(a,f,42)) && (f.size() <= 43 || answerValid(a,f,43)) && (f.size() <= 44 || answerValid(a,f,44)) && (f.size() <= 45 || answerValid(a,f,45)) && (f.size() <= 46 || answerValid(a,f,46)) && (f.size() <= 47 || answerValid(a,f,47)) && (f.size() <= 48 || answerValid(a,f,48)) && (f.size() <= 49 || answerValid(a,f,49)); }
+    function validAnswers(a,f) { return a is map && a.size() == f.size() && answers0(a,f) && (f.size() <= 10 || answers10(a,f)) && (f.size() <= 20 || answers20(a,f)) && (f.size() <= 30 || answers30(a,f)) && (f.size() <= 40 || answers40(a,f)); }
     function isValidUser(d, uid) {
       return d.keys().hasOnly(['uid','name','email','photoURL','createdAt'])
         && d.keys().hasAll(['uid','name','email','createdAt'])
@@ -35,29 +314,217 @@ service cloud.firestore {
         && request.resource.data.createdAt == resource.data.createdAt;
     }
     match /platformRoles/{uid} { allow read: if self(uid); }
-    match /userCenters/{uid}/centers/{id} { allow read: if self(uid); }
-    match /centerSlugs/{slug} { allow read: if true; }
-    match /centerApplications/{id} { allow read: if superAdmin() || (signedIn() && resource.data.submitterUid == request.auth.uid); }
-    match /centerInvitations/{id} { allow read: if superAdmin(); }
+    match /userCenters/{uid}/centers/{id} {
+      allow read: if self(uid);
+      allow create, update: if (self(uid) || owner(id)) && request.resource.data.keys().hasOnly(['centerId','role'])
+        && request.resource.data.centerId == id && role(request.resource.data.role)
+        && getAfter(/databases/$(database)/documents/masjids/$(id)/members/$(uid)).data.role == request.resource.data.role;
+      allow delete: if owner(id) && !existsAfter(/databases/$(database)/documents/masjids/$(id)/members/$(uid));
+    }
+    match /centerSlugs/{slug} {
+      allow read: if true;
+      allow create: if owner(request.resource.data.centerId) && request.resource.data.keys().hasOnly(['centerId'])
+        && str(request.resource.data.centerId,120)
+        && getAfter(/databases/$(database)/documents/masjids/$(request.resource.data.centerId)).data.slug == slug;
+    }
+    match /requestLimits/{uid} {
+      allow read: if self(uid);
+      allow create, update: if verified() && self(uid) && request.resource.data.keys().hasOnly(['at','serverAt'])
+        && iso(request.resource.data.at) && request.resource.data.serverAt == request.time
+        && (!exists(/databases/$(database)/documents/requestLimits/$(uid)) || resource.data.serverAt < request.time - duration.value(30,'s'));
+    }
+    match /centerApplications/{id} {
+      allow get: if verified() && !exists(/databases/$(database)/documents/centerApplications/$(id));
+      allow read: if superAdmin() || (signedIn() && resource.data.submitterUid == request.auth.uid) || owner(id);
+      allow create: if verified() && validApplication(request.resource.data)
+        && request.resource.data.submitterUid == request.auth.uid && request.resource.data.submitterEmail == request.auth.token.email.lower()
+        && request.resource.data.status == 'pending' && !request.resource.data.keys().hasAny(['reviewerUid','centerId','adminStatus','centerStatus'])
+        && getAfter(/databases/$(database)/documents/requestLimits/$(request.auth.uid)).data.serverAt == request.time;
+      allow update: if verified() && validApplicationUpdate(request.resource.data)
+        && request.resource.data.submitterUid == resource.data.submitterUid && request.resource.data.submitterEmail == resource.data.submitterEmail
+        && request.resource.data.createdAt == resource.data.createdAt
+        && (
+          (superAdmin() && resource.data.status == 'pending' && request.resource.data.status in ['approved','rejected','changes_requested']
+            && request.resource.data.reviewerUid == request.auth.uid
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status','feedback','reviewerUid','updatedAt','centerId','adminStatus','centerStatus','history']))
+          || (self(resource.data.submitterUid) && resource.data.status == 'changes_requested' && request.resource.data.status == 'pending'
+            && !request.resource.data.keys().hasAny(['reviewerUid','centerId','adminStatus','centerStatus'])
+            && getAfter(/databases/$(database)/documents/requestLimits/$(request.auth.uid)).data.serverAt == request.time)
+          || (owner(id) && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['centerStatus'])
+            && request.resource.data.centerStatus == getAfter(/databases/$(database)/documents/masjids/$(id)).data.status)
+          || (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['adminStatus']) && request.resource.data.adminStatus == 'active'
+            && getAfter(/databases/$(database)/documents/centerInvitations/$(id)).data.acceptedBy == request.auth.uid
+            && getAfter(/databases/$(database)/documents/centerInvitations/$(id)).data.status == 'accepted')
+        );
+    }
+    match /centerInvitations/{invitationId} {
+      allow read: if superAdmin() || (verified() && resource.data.email == request.auth.token.email.lower()) || owner(resource.data.centerId);
+      allow create: if validInvite(request.resource.data) && request.resource.data.status == 'pending'
+        && !request.resource.data.keys().hasAny(['acceptedBy','acceptedAt'])
+        && (superAdmin() || (owner(request.resource.data.centerId) && request.resource.data.role != 'owner'));
+      allow update: if validInvite(request.resource.data) && request.resource.data.centerId == resource.data.centerId
+        && request.resource.data.email == resource.data.email && request.resource.data.role == resource.data.role
+        && ((superAdmin() && resource.data.status == 'pending' && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['expiresAt','expiresAtMs']))
+          || (claimable(resource.data) && request.resource.data.status == 'accepted' && request.resource.data.acceptedBy == request.auth.uid
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status','acceptedAt','acceptedBy'])
+            && getAfter(/databases/$(database)/documents/masjids/$(resource.data.centerId)/members/$(request.auth.uid)).data.role in ['owner','admin','finance','editor']));
+    }
     match /masjids/{id} {
       allow read: if resource.data.status == 'published' || staff(id);
-      match /members/{uid} { allow read: if self(uid) || owner(id); }
-      match /prayerTimes/{date} { allow read: if published(id) || editor(id); }
-      match /publicFinance/{doc} { allow read: if published(id) || finance(id); }
+      // Superadmins may create directly or approve a request. Both start as drafts.
+      allow create: if superAdmin() && validCenter(request.resource.data)
+        && request.resource.data.version == 1 && request.resource.data.status == 'draft'
+        && getAfter(/databases/$(database)/documents/centerSlugs/$(request.resource.data.slug)).data.centerId == id;
+      allow update: if validCenterUpdate(request.resource.data) && request.resource.data.currency == resource.data.currency
+        && request.resource.data.createdAt == resource.data.createdAt
+        && ((owner(id) && request.resource.data.version == resource.data.version + 1)
+          || (editor(id) && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['madrasa','version','updatedAt']) && request.resource.data.version == resource.data.version + 1)
+          || (editor(id) && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['prayer','prayerVersion','updatedAt']) && request.resource.data.prayerVersion == resource.data.get('prayerVersion',0) + 1)
+          || (finance(id) && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['openingBalanceMinor']) && !exists(/databases/$(database)/documents/masjids/$(id)/financeState/current)));
+      match /members/{uid} {
+        allow read: if self(uid) || owner(id);
+        allow create: if validMember(request.resource.data,uid) && exists(/databases/$(database)/documents/masjids/$(id))
+          && claimMember(id,uid,request.resource.data)
+          && getAfter(/databases/$(database)/documents/userCenters/$(uid)/centers/$(id)).data.role == request.resource.data.role;
+        allow update: if owner(id) && validMember(request.resource.data,uid)
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['role'])
+          && getAfter(/databases/$(database)/documents/userCenters/$(uid)/centers/$(id)).data.role == request.resource.data.role
+          && (superAdmin() || !self(uid) || request.resource.data.role == 'admin');
+        allow delete: if owner(id) && resource.data.role != 'owner'
+          && !existsAfter(/databases/$(database)/documents/userCenters/$(uid)/centers/$(id));
+      }
+      match /educationClasses/{classId} {
+        allow read: if educationManager(id);
+        allow create: if educationManager(id) && educationClass(request.resource.data)
+          && request.resource.data.version == 1 && request.resource.data.createdAt == request.time;
+        allow update: if educationManager(id) && educationClass(request.resource.data)
+          && educationRevision(request.resource.data) && request.resource.data.kind == resource.data.kind;
+      }
+      match /educationPublications/{classId} {
+        allow read, delete: if educationManager(id);
+        allow create, update: if educationManager(id) && publication(id,classId,request.resource.data);
+      }
+      match /hifdhSchedules/{classId} {
+        allow read: if published(id) || educationManager(id);
+        allow create, update: if educationManager(id) && encryptedSchedule(id,classId,request.resource.data);
+        allow delete: if educationManager(id);
+      }
+      match /educationAttendance/{recordId} {
+        allow read: if educationManager(id);
+        allow create, update: if attendance(id,recordId,request.resource.data);
+      }
+      match /educationTeachers/{teacherId} {
+        allow read: if educationManager(id);
+        allow create: if educationManager(id) && educationPerson(id,request.resource.data,false,false)
+          && request.resource.data.version == 1 && request.resource.data.createdAt == request.time;
+        allow update: if educationManager(id) && educationPerson(id,request.resource.data,false,true) && educationRevision(request.resource.data);
+      }
+      match /educationStudents/{studentId} {
+        allow read: if educationManager(id);
+        allow create: if educationManager(id) && educationPerson(id,request.resource.data,true,false)
+          && request.resource.data.version == 1 && request.resource.data.createdAt == request.time;
+        allow update: if educationManager(id) && educationPerson(id,request.resource.data,true,true)
+          && educationRevision(request.resource.data) && request.resource.data.kind == resource.data.kind;
+      }
+      match /prayerTimes/{date} {
+        allow read: if published(id) || editor(id);
+        allow create, update: if editor(id) && validManual(request.resource.data) && request.resource.data.date == date;
+      }
+      match /publicFinance/{report} {
+        allow read: if published(id) || finance(id);
+        allow create, update: if finance(id) && validFinance(request.resource.data)
+          && (report == 'current' || !exists(/databases/$(database)/documents/masjids/$(id)/publicFinance/$(report)))
+          && request.resource.data.collectedMinor == get(/databases/$(database)/documents/masjids/$(id)/financeState/current).data.collectedMinor
+          && request.resource.data.spentMinor == get(/databases/$(database)/documents/masjids/$(id)/financeState/current).data.spentMinor
+          && request.resource.data.openingBalanceMinor == get(/databases/$(database)/documents/masjids/$(id)/financeState/current).data.openingBalanceMinor
+          && request.resource.data.ledgerVersion == get(/databases/$(database)/documents/masjids/$(id)/financeState/current).data.version;
+      }
       match /publicTransactions/{doc} { allow read: if published(id) || finance(id); }
-      match /announcements/{doc} { allow read: if published(id) || editor(id); }
+      match /announcements/{doc} {
+        allow read: if published(id) || editor(id);
+        allow create, update: if editor(id) && validNotice(request.resource.data);
+        allow delete: if editor(id);
+      }
       match /announcementArchive/{doc} { allow read: if editor(id); }
-      match /events/{doc} { allow read: if published(id) || editor(id); }
-      match /forms/{doc} { allow read: if published(id) || editor(id); }
-      match /eventDrafts/{doc} { allow read: if editor(id); }
-      match /formDrafts/{doc} { allow read: if editor(id); }
-      match /funds/{doc} { allow read: if finance(id); }
-      match /expenses/{doc} { allow read: if finance(id); }
-      match /financeState/{doc} { allow read: if finance(id); }
-      match /formSubmissions/{doc} { allow read: if editor(id); }
-      match /contentDrafts/{doc} { allow read: if (resource.data.kind == 'finance' && finance(id)) || (resource.data.kind != 'finance' && editor(id)); }
-      match /contentRevisions/{doc} { allow read: if staff(id); }
-      match /auditLogs/{doc} { allow read: if owner(id); }
+      match /events/{doc} {
+        allow read: if published(id) || editor(id);
+        allow create, update: if editor(id) && validEvent(request.resource.data);
+        allow delete: if editor(id);
+      }
+      match /forms/{doc} {
+        allow read: if published(id) || editor(id);
+        allow create, update: if editor(id) && validForm(request.resource.data);
+        allow delete: if editor(id);
+      }
+      match /eventDrafts/{doc} {
+        allow read: if editor(id);
+        allow create, update: if editor(id) && validContentDraft(request.resource.data,'events');
+        allow delete: if editor(id);
+      }
+      match /formDrafts/{doc} {
+        allow read: if editor(id);
+        allow create, update: if editor(id) && validContentDraft(request.resource.data,'forms');
+        allow delete: if editor(id);
+      }
+      match /{ledger}/{entry} {
+        allow read: if ledger in ['funds','expenses'] && finance(id);
+        allow create: if ledger in ['funds','expenses'] && finance(id) && validLedger(request.resource.data)
+          && request.resource.data.byUid == request.auth.uid && request.resource.data.currency == get(/databases/$(database)/documents/masjids/$(id)).data.currency
+          && !request.resource.data.keys().hasAny(['reversedAt','reversedBy'])
+          && getAfter(/databases/$(database)/documents/masjids/$(id)/financeState/current).data.version > (exists(/databases/$(database)/documents/masjids/$(id)/financeState/current) ? get(/databases/$(database)/documents/masjids/$(id)/financeState/current).data.version : 0)
+          && (request.resource.data.amountMinor > 0 || (entry == 'reversal-' + request.resource.data.reverses
+            && request.resource.data.amountMinor == -get(/databases/$(database)/documents/masjids/$(id)/$(ledger)/$(request.resource.data.reverses)).data.amountMinor
+            && getAfter(/databases/$(database)/documents/masjids/$(id)/$(ledger)/$(request.resource.data.reverses)).data.reversedBy == request.auth.uid));
+        allow update: if ledger in ['funds','expenses'] && finance(id) && validLedger(request.resource.data)
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['reversedAt','reversedBy'])
+          && !resource.data.keys().hasAny(['reversedAt','reverses']) && request.resource.data.reversedBy == request.auth.uid
+          && getAfter(/databases/$(database)/documents/masjids/$(id)/$(ledger)/$('reversal-' + entry)).data.amountMinor == -resource.data.amountMinor;
+      }
+      match /financeState/{state} {
+        allow read: if finance(id);
+        allow create, update: if state == 'current' && finance(id) && validFinance(request.resource.data)
+          && request.resource.data.currency == get(/databases/$(database)/documents/masjids/$(id)).data.currency
+          && request.resource.data.version == (exists(/databases/$(database)/documents/masjids/$(id)/financeState/current) ? resource.data.version + 1 : 1)
+          && (!exists(/databases/$(database)/documents/masjids/$(id)/financeState/current) || request.resource.data.openingBalanceMinor == resource.data.openingBalanceMinor);
+      }
+      match /formSubmissions/{submission} {
+        allow read: if editor(id);
+        allow create: if published(id) && request.resource.data.keys().hasOnly(['formId','answers','createdAt'])
+          && str(request.resource.data.formId,120) && iso(request.resource.data.createdAt)
+          && get(/databases/$(database)/documents/masjids/$(id)/forms/$(request.resource.data.formId)).data.open == true
+          && validAnswers(request.resource.data.answers, get(/databases/$(database)/documents/masjids/$(id)/forms/$(request.resource.data.formId)).data.fields);
+      }
+      match /contentDrafts/{draft} {
+        allow read: if (draft == 'finance-finance' && finance(id)) || (draft != 'finance-finance' && editor(id));
+        allow create, update: if validDraft(request.resource.data) && ((request.resource.data.kind == 'finance' && finance(id)) || (request.resource.data.kind != 'finance' && editor(id)))
+          && draft == request.resource.data.kind + '-' + request.resource.data.targetId;
+        allow delete: if (draft == 'finance-finance' && finance(id)) || (draft != 'finance-finance' && editor(id));
+      }
+      match /contentRevisions/{doc} {
+        allow read: if staff(id);
+        allow create: if request.resource.data.keys().hasOnly(['kind','targetId','payload','version','authorUid','at','restoredFrom'])
+          && payload(request.resource.data.kind,request.resource.data.payload) && str(request.resource.data.targetId,120)
+          && request.resource.data.version is int && request.resource.data.authorUid == request.auth.uid && iso(request.resource.data.at)
+          && (request.resource.data.restoredFrom == null || str(request.resource.data.restoredFrom,120))
+          && ((request.resource.data.kind == 'finance' && finance(id)) || (request.resource.data.kind != 'finance' && editor(id)));
+      }
+      match /auditLogs/{doc} {
+        allow read: if owner(id);
+        allow create: if (staff(id) || existsAfter(/databases/$(database)/documents/masjids/$(id)/members/$(request.auth.uid)))
+          && request.resource.data.keys().hasOnly(['uid','action','at','platformAccess','fundCount','expenseCount','recordId','email','role','memberUid','newOwnerUid','previousRole','entryId','kind'])
+          && request.resource.data.uid == request.auth.uid && str(request.resource.data.action,80) && iso(request.resource.data.at)
+          && (!('platformAccess' in request.resource.data) || request.resource.data.platformAccess is bool)
+          && (!('fundCount' in request.resource.data) || request.resource.data.fundCount is int)
+          && (!('expenseCount' in request.resource.data) || request.resource.data.expenseCount is int)
+          && (!('recordId' in request.resource.data) || str(request.resource.data.recordId,120))
+          && (!('email' in request.resource.data) || str(request.resource.data.email,254))
+          && (!('role' in request.resource.data) || role(request.resource.data.role))
+          && (!('memberUid' in request.resource.data) || str(request.resource.data.memberUid,128))
+          && (!('newOwnerUid' in request.resource.data) || str(request.resource.data.newOwnerUid,128))
+          && (!('previousRole' in request.resource.data) || role(request.resource.data.previousRole))
+          && (!('entryId' in request.resource.data) || str(request.resource.data.entryId,120))
+          && (!('kind' in request.resource.data) || request.resource.data.kind in ['funds','expenses']);
+      }
     }
   }
 }
