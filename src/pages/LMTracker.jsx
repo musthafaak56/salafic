@@ -49,7 +49,7 @@ function DailyChecklist({ day }) {
   </>
 }
 
-export default function LMTracker() {
+function TrackerContent() {
   const [today, setToday] = useState(() => localDateKey())
   const [selected, setSelected] = useState(() => localDateKey())
   useEffect(() => {
@@ -61,11 +61,7 @@ export default function LMTracker() {
   const days = trackerWeek(new Date(`${today}T12:00:00`))
   const activeDay = days.find((day) => day.key === selected) || days[3]
 
-  return <div className="lm-tracker">
-    <header className="lm-header"><Link to="/">Salafic</Link><ThemeToggle /></header>
-    <main className="lm-main">
-      <h1>LM tracker</h1>
-      <p className="lm-intro">A little intention, every day.</p>
+  return <>
       <div className="lm-week" role="group" aria-label="Choose a day">
         {days.map((day) => <button key={day.key} type="button" aria-pressed={day.key === activeDay.key} aria-current={day.key === today ? 'date' : undefined} aria-label={day.date.toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })} onClick={() => setSelected(day.key)}>
           <span>{day.date.toLocaleDateString(undefined, { weekday: 'short' })}</span>
@@ -75,6 +71,43 @@ export default function LMTracker() {
       </div>
       <DailyChecklist key={activeDay.key} day={activeDay} />
       <footer className="lm-footer">Saved only in this browser. No login needed. Clearing browser data removes your progress.</footer>
+  </>
+}
+
+export default function LMTracker() {
+  const [unlocked, setUnlocked] = useState(false)
+  const [password, setPassword] = useState('')
+  const [error, setError] = useState('')
+
+  function unlock(event) {
+    event.preventDefault()
+    if (password !== 'october') {
+      setError('Incorrect password. Please try again.')
+      return
+    }
+    setPassword('')
+    setError('')
+    setUnlocked(true)
+  }
+
+  return <div className="lm-tracker">
+    <header className="lm-header"><Link to="/">Salafic</Link><ThemeToggle /></header>
+    <main className="lm-main">
+      <h1>LM tracker</h1>
+      {unlocked ? <>
+        <div className="lm-access-row">
+          <p className="lm-intro">A little intention, every day.</p>
+          <button type="button" className="lm-lock" onClick={() => setUnlocked(false)}>Lock tracker</button>
+        </div>
+        <TrackerContent />
+      </> : <form className="lm-unlock" onSubmit={unlock}>
+        <p className="lm-intro">Enter the password to open your daily checklist.</p>
+        <label htmlFor="lm-password">Tracker password</label>
+        <input id="lm-password" type="password" autoComplete="current-password" required maxLength={100} value={password} onChange={(event) => { setPassword(event.target.value); setError('') }} aria-invalid={!!error} aria-describedby={error ? 'lm-password-error' : undefined} />
+        {error && <p id="lm-password-error" className="platform-error" role="alert">{error}</p>}
+        <button className="platform-button" type="submit">Unlock tracker</button>
+        <p className="lm-note">This is a shared access password, not an account login. Progress stays in this browser and is not encrypted.</p>
+      </form>}
     </main>
   </div>
 }
