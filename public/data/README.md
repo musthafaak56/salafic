@@ -6,6 +6,11 @@
   `timings-Rayan.json` is specific to this audio: the 30 ayahs were aligned
   against the Uthmani text using stable-ts and faster-whisper-small. Times
   are model estimates; don't reuse them for another recording.
+- The per-surah files under `rayan/` cover the rest of Juz 25–30, starting
+  at Fussilat 41:47. Each file is loaded only for its surah. Audio
+  streams directly from Way2Quran's Rayyan Al-Muhaisani Hafs collection.
+  To regenerate missing files with the local speech model and FFmpeg:
+  `uv run --python 3.12 --with stable-ts --with faster-whisper python scripts/align-rayan.py`.
 
 - `timings-*.json` — Word-accurate ayah timing segments from the Quran
   Alignment project (https://github.com/cpfair/quran-align), CC-BY-4.0.

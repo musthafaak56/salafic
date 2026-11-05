@@ -524,7 +524,7 @@ export async function renderAyahVideo({ surahNumber, surahLabel, ayahs, reciter,
   await ensureAudioRunning(audio)
 
   onProgress?.({ phase: 'fetch', done: 0, total: ayahs.length })
-  const karaokeP = loadKaraoke(reciter).catch(() => null)
+  const karaokeP = loadKaraoke(reciter, surahNumber).catch(() => null)
   const surahAud = surahMode(reciter)
   let raw = []
   if (!surahAud) {
@@ -924,7 +924,7 @@ export async function renderAyahVideoOffline({
   debugStep('start', `${surahNumber} ${ayahs.length} ayahs ${reciter}`)
 
   onProgress?.({ phase: 'fetch', done: 0, total: ayahs.length })
-  const karaokeP = loadKaraoke(reciter).catch(() => null)
+  const karaokeP = loadKaraoke(reciter, surahNumber).catch(() => null)
   const surahAud = surahMode(reciter)
 
   if (!audio) {

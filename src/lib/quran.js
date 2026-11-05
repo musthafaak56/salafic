@@ -4,7 +4,7 @@ export const RECITERS = [
   { id: 'Shuraym', label: 'Sa‘ud ash-Shuraym' },
   { id: 'Shatri', label: 'Abu Bakr ash-Shatri' },
   { id: 'Dukhain', label: 'Haitham Al-Dukhain' },
-  { id: 'Rayan', label: 'Rayan Al Mohaisiny (Al-Mulk only)' },
+  { id: 'Rayan', label: 'Rayan Al Mohaisiny (Juz 25–30)' },
 ]
 
 // Reciters whose audio is served as one file per surah instead of one file
@@ -212,6 +212,9 @@ const DUKHAIN_BASE = 'https://server16.mp3quran.net/h_dukhain/Rewayat-Hafs-A-n-A
 
 export function surahAudioUrl(reciter, surah) {
   if (reciter === 'Rayan' && Number(surah) === 67) return '/data/rayan-al-mulk.mp3'
+  if (reciter === 'Rayan' && surah >= 41 && surah <= 114) {
+    return `https://media.way2quran.com/rayyan-al-muhaisani/hafs-an-asim/${Number(surah)}.mp3`
+  }
   if (reciter === 'Dukhain') {
     return `${DUKHAIN_BASE}/${String(surah).padStart(3, '0')}.mp3`
   }

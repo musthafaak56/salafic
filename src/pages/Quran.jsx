@@ -61,7 +61,7 @@ function cachePeaks(key, value) {
 // Module level (stable identity): a component defined inside the render body is
 // recreated on every state change, so React treats it as a new element type and
 // remounts it each keystroke - which blurs the input and loses the caret.
-function AyahStep({ label, value, onChange, min, max, dec, inc }) {
+function AyahStep({ label, value, onChange, onBlur, min, max, dec, inc }) {
   return (
     <label className="block">
       <span className="text-xs font-semibold tracking-wider text-ink-secondary uppercase">
@@ -82,6 +82,7 @@ function AyahStep({ label, value, onChange, min, max, dec, inc }) {
           max={max}
           value={value}
           onChange={onChange}
+          onBlur={onBlur}
           className="h-12 w-full rounded-xl border border-line bg-surface px-3 text-sm tabular-nums text-ink focus:outline-2 focus:outline-primary"
         />
         <button
@@ -260,7 +261,8 @@ export default function Quran() {
 
   const surah = surahs?.find((s) => s.number === surahNumber)
   const ayahCount = surah?.numberOfAyahs ?? 0
-  const clampedStart = Math.max(1, Math.min(Number(startAyah) || 1, ayahCount || 1))
+  const firstAyah = reciter === 'Rayan' && surahNumber === 41 ? 47 : 1
+  const clampedStart = Math.max(firstAyah, Math.min(Number(startAyah) || firstAyah, ayahCount || 1))
   const clampedEnd = Math.max(
     clampedStart,
     Math.min(Number(endAyah) || 1, ayahCount || 1),
@@ -296,7 +298,7 @@ export default function Quran() {
   async function loadNowWords(ayahNumber) {
     try {
       if (!karaokeRef.current) {
-        karaokeRef.current = await loadKaraoke(reciter).catch(() => null)
+        karaokeRef.current = await loadKaraoke(reciter, surahNumber).catch(() => null)
       }
       const karaoke = karaokeRef.current
       if (!karaoke) {
@@ -825,7 +827,7 @@ useEffect(() => {
         }
         setProgress({ done: 1, total: list.length + 1 })
         if (!karaokeRef.current) {
-          karaokeRef.current = await loadKaraoke(reciter).catch(() => null)
+          karaokeRef.current = await loadKaraoke(reciter, surahNumber).catch(() => null)
         }
         const karaoke = karaokeRef.current
         const texts = surahTextsRef.current || (await fetchSurahTexts(surahNumber))
@@ -1061,11 +1063,15 @@ useEffect(() => {
                   value={reciter}
                   onChange={(e) => {
                     stopPlayback()
+                    karaokeRef.current = null
                     const next = e.target.value
-                    if (next === 'Rayan' && surahNumber !== 67) {
+                    if (next === 'Rayan' && surahNumber < 41) {
                       setSurahNumber(67)
                       setStartAyah(1)
                       setEndAyah(3)
+                    } else if (next === 'Rayan' && surahNumber === 41) {
+                      setStartAyah(Math.max(47, clampedStart))
+                      setEndAyah(Math.max(47, clampedEnd))
                     }
                     setReciter(next)
                   }}
@@ -1077,6 +1083,11 @@ useEffect(() => {
                     </option>
                   ))}
                 </select>
+                {reciter === 'Rayan' && (
+                  <span className="mt-1 block text-xs text-ink-secondary">
+                    Audio: Way2Quran · Hafs an Asim{surahNumber === 41 ? ' · Available from ayah 47' : ''}
+                  </span>
+                )}
               </label>
 
               <label className="block">
@@ -1087,16 +1098,18 @@ useEffect(() => {
                   value={surahNumber}
                   onChange={(e) => {
                     const n = Number(e.target.value)
+                    karaokeRef.current = null
                     setSurahNumber(n)
-                    setStartAyah(1)
+                    const first = reciter === 'Rayan' && n === 41 ? 47 : 1
+                    setStartAyah(first)
                     setEndAyah(
-                      Math.min(3, surahs?.find((s) => s.number === n)?.numberOfAyahs ?? 3),
+                      Math.min(first + 2, surahs?.find((s) => s.number === n)?.numberOfAyahs ?? first),
                     )
                     stopPlayback()
                   }}
                   className="mt-2 h-12 w-full cursor-pointer rounded-xl border border-line bg-surface px-3 text-sm text-ink focus:outline-2 focus:outline-primary"
                 >
-                  {surahs.filter((s) => reciter !== 'Rayan' || s.number === 67).map((s) => (
+                  {surahs.filter((s) => reciter !== 'Rayan' || s.number >= 41).map((s) => (
                     <option key={s.number} value={s.number}>
                       {s.number}. {s.englishName}
                       {s.arabicName ? ` (${s.arabicName})` : ''} · {s.numberOfAyahs}
@@ -1109,13 +1122,14 @@ useEffect(() => {
                     <AyahStep
                       label="From ayah"
                       value={startAyah}
+                      onBlur={() => setStartAyah(clampedStart)}
                       onChange={(e) =>
                         setStartAyah(e.target.value === '' ? '' : Number(e.target.value))
                       }
-                      min={1}
+                      min={firstAyah}
                       max={ayahCount || 1}
                       dec={() =>
-                        setStartAyah(Math.max(1, (Number(startAyah) || clampedStart) - 1))
+                        setStartAyah(Math.max(firstAyah, (Number(startAyah) || clampedStart) - 1))
                       }
                       inc={() =>
                         setStartAyah(
@@ -1126,6 +1140,7 @@ useEffect(() => {
                     <AyahStep
                       label="To ayah"
                       value={endAyah}
+                      onBlur={() => setEndAyah(clampedEnd)}
                       onChange={(e) =>
                         setEndAyah(e.target.value === '' ? '' : Number(e.target.value))
                       }

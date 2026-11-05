@@ -34,8 +34,9 @@ async function fetchJson(url, cache) {
   return data
 }
 
-export async function loadKaraoke(reciter) {
-  const timingUrl = TIMING_FILES[reciter]
+export async function loadKaraoke(reciter, surah) {
+  const timingUrl = reciter === 'Rayan' && surah !== 67
+    ? `/data/rayan/${surah}.json` : TIMING_FILES[reciter]
   if (!timingUrl) throw new Error(`No timing data for ${reciter}`)
   const [timings, ml] = await Promise.all([
     fetchJson(timingUrl, timingCache),
