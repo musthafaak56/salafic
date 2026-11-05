@@ -24,6 +24,7 @@ import {
   fetchSurahs,
   fetchSurahTexts,
   formatAyahCopyText,
+  rangeTiming,
 } from '../lib/quran'
 import {
   renderAyahVideo,
@@ -34,9 +35,7 @@ import {
   timelinePeaks,
   W as VIDEO_W,
   H as VIDEO_H,
-  PAD,
   TAIL,
-  LEAD_IN,
 } from '../lib/quranVideo'
 import { loadKaraoke, ayahWords, activeWord } from '../lib/karaoke'
 import AppHeader from '../components/AppHeader'
@@ -161,6 +160,7 @@ export default function Quran() {
     () => RECITERS.find((r) => r.id === 'Dukhain')?.id ?? RECITERS[0].id,
   )
   const [surahNumber, setSurahNumber] = useState(23)
+  const { pad, lead } = rangeTiming(reciter)
   const [startAyah, setStartAyah] = useState(1)
   const [endAyah, setEndAyah] = useState(3)
 
@@ -278,9 +278,10 @@ export default function Quran() {
   // exact same buildLayouts pass the video renderer runs, so the preview is
   // pixel-identical to the MP4 the download produces.
   const previewDataRef = useRef(null)
+  const layoutKaraoke = karaokeRef.current
   const previewFit = useMemo(() => {
     const texts = surahTextsRef.current
-    const karaoke = karaokeRef.current
+    const karaoke = layoutKaraoke
     if (!texts || !karaoke) return null
     const slides = ayahList().map((n) => {
       const ayah = texts.ayahs[n - 1]
@@ -293,7 +294,7 @@ export default function Quran() {
     if (slides.some((s) => !s)) return null
     previewDataRef.current = slides
     return buildLayouts(slides, fontPair.ar, fontPair.ml)
-  }, [surahTexts, nowWords, fontPair, fontStatus, clampedStart, clampedEnd, reciter, surahNumber])
+  }, [surahTexts, layoutKaraoke, fontPair, fontStatus, clampedStart, clampedEnd, reciter, surahNumber])
 
   async function loadNowWords(ayahNumber) {
     try {
@@ -413,7 +414,10 @@ export default function Quran() {
         setCurrentAyah(playQueueRef.current[next])
         lastActiveRef.current = -1
         setActiveWordIndex(-1)
-        if (surahMode(reciter)) {
+        if (reciter === 'Dukhain') {
+          // Adjacent ayahs share one continuous recording. Only change the text.
+          await loadNowWords(playQueueRef.current[next])
+        } else if (surahMode(reciter)) {
           // Keep the same surah file open; hold at the window end while the
           // next ayah's words load, then move to its window.
           audioRef.current?.pause()
@@ -464,9 +468,8 @@ export default function Quran() {
     const end = bundle.words.endMs
     const t = audioRef.current.currentTime * 1000
     if (typeof start === 'number' && typeof end === 'number') {
-      if (t >= end - 40 && !advancingRef.current) {
-        // handleEnded sets advancingRef while it loads the next ayah's words.
-        requestAnimationFrame(() => handleEnded())
+      if (t >= end - (reciter === 'Dukhain' ? 0 : 40) && !el.paused && !advancingRef.current) {
+        handleEnded()
         return
       }
       const elapsed = t - start
@@ -573,9 +576,9 @@ export default function Quran() {
             audioAt: t,
           })
           previewDursRef.current.set(nums[i], dur)
-          t += dur + PAD
+          t += dur + pad
         }
-        const totalDur = t - PAD + LEAD_IN + TAIL
+        const totalDur = t - pad + lead + TAIL
         const peaks = timelinePeaks(timeline, totalDur)
         if (alive) {
           cachePeaks(key, peaks)
@@ -630,7 +633,7 @@ export default function Quran() {
       }
       durs.push(dur)
     }
-    for (let i = 0; i < index; i++) audioAt += durs[i] + PAD
+    for (let i = 0; i < index; i++) audioAt += durs[i] + pad
 
     const bundle = nowWordRef.current
     const w = bundle?.words
@@ -644,13 +647,13 @@ export default function Quran() {
       }
     }
     elapsedInAyah = Math.min(elapsedInAyah, durs[index])
-    const totalDur = durs.reduce((a, b) => a + b, 0) + PAD * (nums.length - 1) + LEAD_IN + TAIL
-    const fraction = Math.max(0, Math.min(1, (audioAt + LEAD_IN + elapsedInAyah) / totalDur))
+    const totalDur = durs.reduce((a, b) => a + b, 0) + pad * (nums.length - 1) + lead + TAIL
+    const fraction = Math.max(0, Math.min(1, (audioAt + lead + elapsedInAyah) / totalDur))
     const splits = slides
       ? slides.map((s, i) => {
           let at = 0
-          for (let j = 0; j < i; j++) at += durs[j] + PAD
-          return { at: (at + LEAD_IN) / totalDur, label: s.ayah.number }
+          for (let j = 0; j < i; j++) at += durs[j] + pad
+          return { at: (at + lead) / totalDur, label: s.ayah.number }
         })
       : []
 

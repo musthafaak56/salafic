@@ -1,4 +1,4 @@
-import { ayahUrl, surahAudioUrl, surahMode } from './quran'
+import { ayahUrl, surahAudioUrl, surahMode, rangeTiming } from './quran'
 import { FONT_PAIRS } from './quran'
 import { loadKaraoke, ayahWords, activeWord } from './karaoke'
 import { wrapWords, activeLineOf, lineGlosses, fitArabicWords, TEXT_SIZES } from './wordWrap'
@@ -16,9 +16,7 @@ export const H = 1280
 const NAVY = '#011F3B'
 const CREAM = '#F7F4EF'
 const GOLD = '#C2933C'
-export const PAD = 0.8
 export const TAIL = 0.4
-export const LEAD_IN = 0.3
 const MAX_SECONDS = 15 * 60
 
 const DEFAULT_FONTS = FONT_PAIRS[0]
@@ -544,6 +542,9 @@ export async function renderAyahVideo({ surahNumber, surahLabel, ayahs, reciter,
     let surahBuf = null
     let perAyahBufs = null
     let windows = null
+    const continuous = reciter === 'Dukhain'
+    const { pad } = rangeTiming(reciter)
+    let rangeSource = null
     let t = audio.currentTime + 0.3
 
     const dest = audio.createMediaStreamDestination()
@@ -563,42 +564,45 @@ export async function renderAyahVideo({ surahNumber, surahLabel, ayahs, reciter,
         return { words: w, start: w.startMs / 1000, dur: (w.endMs - w.startMs) / 1000 }
       })
       const sum = windows.reduce((acc, w) => acc + w.dur, 0)
-      if (sum + PAD * (total - 1) + TAIL > MAX_SECONDS) throw new Error('too-long')
+      if (sum + pad * (total - 1) + TAIL > MAX_SECONDS) throw new Error('too-long')
 
-      const el = new Audio()
-      el.preload = 'auto'
-      el.crossOrigin = 'anonymous'
-      el.src = surahAudioUrl(reciter, surahNumber)
-      await new Promise((resolve, reject) => {
-        const ok = () => {
-          el.removeEventListener('loadedmetadata', ok)
-          resolve()
+      if (!continuous) {
+        const el = new Audio()
+        el.preload = 'auto'
+        el.crossOrigin = 'anonymous'
+        el.src = surahAudioUrl(reciter, surahNumber)
+        await new Promise((resolve, reject) => {
+          const ok = () => {
+            el.removeEventListener('loadedmetadata', ok)
+            resolve()
+          }
+          const fail = () => {
+            el.removeEventListener('error', fail)
+            reject(new Error(`Could not load surah ${surahNumber} audio`))
+          }
+          el.addEventListener('loadedmetadata', ok)
+          el.addEventListener('error', fail)
+        })
+        audio.createMediaElementSource(el).connect(master)
+        play = {
+          seek(i) {
+            el.currentTime = windows[i].start
+          },
+          start() {
+            el.currentTime = windows[0].start
+            el.play().catch(() => {})
+          },
+          stop() {
+            el.pause()
+          },
         }
-        const fail = () => {
-          el.removeEventListener('error', fail)
-          reject(new Error(`Could not load surah ${surahNumber} audio`))
-        }
-        el.addEventListener('loadedmetadata', ok)
-        el.addEventListener('error', fail)
-      })
-      audio.createMediaElementSource(el).connect(master)
-      play = {
-        seek(i) {
-          el.currentTime = windows[i].start
-        },
-        start() {
-          el.currentTime = windows[0].start
-          el.play().catch(() => {})
-        },
-        stop() {
-          el.pause()
-        },
       }
 
-      t = audio.currentTime + 0.3
+      // Continuous slides stay relative until recording is ready to start.
+      t = continuous ? 0 : audio.currentTime + 0.3
       for (let i = 0; i < total; i++) {
         slides.push({ start: t, dur: windows[i].dur, ayah: ayahs[i], words: windows[i].words })
-        t += windows[i].dur + PAD
+        t += windows[i].dur + pad
       }
 
       // The <audio> element streams the file without exposing samples, so a
@@ -606,6 +610,11 @@ export async function renderAyahVideo({ surahNumber, surahLabel, ayahs, reciter,
       const surahRes = await fetch(surahAudioUrl(reciter, surahNumber))
       if (!surahRes.ok) throw new Error(`Could not fetch surah ${surahNumber} audio`)
       surahBuf = await decodeBuffer(audio, await surahRes.arrayBuffer())
+      if (continuous) {
+        rangeSource = audio.createBufferSource()
+        rangeSource.buffer = surahBuf
+        rangeSource.connect(master)
+      }
     } else {
       const [decoded] = await Promise.all([
         (async () => {
@@ -622,7 +631,7 @@ export async function renderAyahVideo({ surahNumber, surahLabel, ayahs, reciter,
       perAyahBufs = decoded
 
       const seconds =
-        decoded.reduce((sum, b) => sum + b.duration, 0) + PAD * (decoded.length - 1) + TAIL
+        decoded.reduce((sum, b) => sum + b.duration, 0) + pad * (decoded.length - 1) + TAIL
       if (seconds > MAX_SECONDS) throw new Error('too-long')
 
       t = audio.currentTime + 0.3
@@ -640,10 +649,10 @@ export async function renderAyahVideo({ surahNumber, surahLabel, ayahs, reciter,
         src.buffer = decoded[i]
         src.connect(master)
         src.start(t)
-        t += decoded[i].duration + PAD
+        t += decoded[i].duration + pad
       }
     }
-    const totalDur = t - audio.currentTime + TAIL
+    const totalDur = (continuous ? t : t - audio.currentTime) + TAIL
 
     const fitLayouts = buildLayouts(slides, fonts?.ar || DEFAULT_FONTS.ar, fonts?.ml || DEFAULT_FONTS.ml)
     slides.forEach((s, i) => {
@@ -674,14 +683,14 @@ export async function renderAyahVideo({ surahNumber, surahLabel, ayahs, reciter,
       recorder.onerror = () => reject(new Error('recording-error'))
     })
 
-    const t0 = audio.currentTime
+    let t0 = audio.currentTime
     // Real waveform of the recording: one decoded window per ayah placed at
     // its timeline offset, then peak amplitudes over the whole duration.
     const waveWindows = slides.map((s, i) => ({
       buffer: surahBuf || perAyahBufs?.[i] || null,
       start: surahBuf ? windows[i].start : 0,
       dur: surahBuf ? windows[i].dur : perAyahBufs?.[i]?.duration || 0,
-      audioAt: s.start - t0,
+      audioAt: continuous ? s.start : s.start - t0,
     }))
     const peaks = timelinePeaks(
       waveWindows.filter((w) => w.buffer),
@@ -691,6 +700,11 @@ export async function renderAyahVideo({ surahNumber, surahLabel, ayahs, reciter,
     perAyahBufs = null
     play?.start()
     recorder.start(250)
+    if (continuous) {
+      t0 = audio.currentTime
+      rangeSource.start(t0, windows[0].start, t)
+      for (const slide of slides) slide.start += t0
+    }
     await new Promise((resolve, reject) => {
       let raf = 0
       let lastElapsed = -1
@@ -999,12 +1013,13 @@ export async function renderAyahVideoOffline({
   // window, its slide follows after the LEAD_IN lead, and PAD silence gaps sit
   // between windows.
   let t = 0
+  const { pad, lead } = rangeTiming(reciter)
   for (const d of decoded) {
     d.audioAt = t
-    d.slideAt = t + LEAD_IN
-    t += d.dur + PAD
+    d.slideAt = t + lead
+    t += d.dur + pad
   }
-  const totalDur = t - PAD + LEAD_IN + TAIL
+  const totalDur = t - pad + lead + TAIL
   if (totalDur > MAX_SECONDS) throw new Error('too-long')
 
   const sampleRate = totalSampleRate
@@ -1084,11 +1099,14 @@ export async function renderAyahVideoOffline({
     // largest remaining allocation) can be dropped before video frames start
     // accumulating in memory.
     const audioChunk = Math.max(1024, Math.round(sampleRate * 0.5))
+    let audioWindows = reciter === 'Dukhain'
+      ? [{ ...decoded[0], dur: t }]
+      : decoded
     for (let pos = 0; pos < totalSamples; pos += audioChunk) {
       if (encError) throw new Error('encode-error')
       const n = Math.min(audioChunk, totalSamples - pos)
       const data = new Float32Array(n * channels)
-      fillAudioBlock(data, pos, n, decoded, sampleRate, channels)
+      fillAudioBlock(data, pos, n, audioWindows, sampleRate, channels)
       const audioData = new AudioData({
         format: 'f32',
         sampleRate,
@@ -1114,6 +1132,7 @@ export async function renderAyahVideoOffline({
       decoded.map((d) => ({ buffer: d.buffer, start: d.start, dur: d.dur, audioAt: d.audioAt })),
       totalDur,
     )
+    audioWindows = null
     decoded = null
 
     const frameCount = Math.max(1, Math.round(totalDur * OFFLINE_FPS))
