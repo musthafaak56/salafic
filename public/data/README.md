@@ -1,5 +1,12 @@
 # Word-by-word data (used for recited-word highlighting)
 
+- `rayan-al-mulk.mp3` — Rayan Al Mohaisiny, Surah 67, Hafs an Asim,
+  [recording from Way2Quran](https://media.way2quran.com/rayyan-al-muhaisani/hafs-an-asim/67.mp3).
+  See the [provider's reuse guidance](https://way2quran.com/en/faq).
+  `timings-Rayan.json` is specific to this audio: the 30 ayahs were aligned
+  against the Uthmani text using stable-ts and faster-whisper-small. Times
+  are model estimates; don't reuse them for another recording.
+
 - `timings-*.json` — Word-accurate ayah timing segments from the Quran
   Alignment project (https://github.com/cpfair/quran-align), CC-BY-4.0.
   Format: `[{surah, ayah, segments: [[word0, word1, start_ms, end_ms], ...]}]`,

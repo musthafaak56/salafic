@@ -12,6 +12,7 @@ const TIMING_FILES = {
   Shatri: '/data/timings-Shatri.json',
   Shuraym: '/data/timings-Shuraym.json',
   Dukhain: '/data/timings-Dukhain.json',
+  Rayan: '/data/timings-Rayan.json',
 }
 
 const ML_FILE = '/data/ml-words.json'

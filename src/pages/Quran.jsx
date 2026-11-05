@@ -1059,7 +1059,16 @@ useEffect(() => {
                 </span>
                 <select
                   value={reciter}
-                  onChange={(e) => setReciter(e.target.value)}
+                  onChange={(e) => {
+                    stopPlayback()
+                    const next = e.target.value
+                    if (next === 'Rayan' && surahNumber !== 67) {
+                      setSurahNumber(67)
+                      setStartAyah(1)
+                      setEndAyah(3)
+                    }
+                    setReciter(next)
+                  }}
                   className="mt-2 h-12 w-full cursor-pointer rounded-xl border border-line bg-surface px-3 text-sm text-ink focus:outline-2 focus:outline-primary"
                 >
                   {RECITERS.map((r) => (
@@ -1087,7 +1096,7 @@ useEffect(() => {
                   }}
                   className="mt-2 h-12 w-full cursor-pointer rounded-xl border border-line bg-surface px-3 text-sm text-ink focus:outline-2 focus:outline-primary"
                 >
-                  {surahs.map((s) => (
+                  {surahs.filter((s) => reciter !== 'Rayan' || s.number === 67).map((s) => (
                     <option key={s.number} value={s.number}>
                       {s.number}. {s.englishName}
                       {s.arabicName ? ` (${s.arabicName})` : ''} · {s.numberOfAyahs}

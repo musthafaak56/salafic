@@ -4,13 +4,14 @@ export const RECITERS = [
   { id: 'Shuraym', label: 'Sa‘ud ash-Shuraym' },
   { id: 'Shatri', label: 'Abu Bakr ash-Shatri' },
   { id: 'Dukhain', label: 'Haitham Al-Dukhain' },
+  { id: 'Rayan', label: 'Rayan Al Mohaisiny (Al-Mulk only)' },
 ]
 
 // Reciters whose audio is served as one file per surah instead of one file
 // per ayah (like the other four). Playback seeks within the surah file using
 // the ayah windows stored in the timing data.
 export function surahMode(reciter) {
-  return reciter === 'Dukhain'
+  return reciter === 'Dukhain' || reciter === 'Rayan'
 }
 
 // Selectable font pairs for the recited-word view and video.
@@ -210,6 +211,7 @@ export function ayahUrl(reciter, surah, ayah) {
 const DUKHAIN_BASE = 'https://server16.mp3quran.net/h_dukhain/Rewayat-Hafs-A-n-Assem'
 
 export function surahAudioUrl(reciter, surah) {
+  if (reciter === 'Rayan' && Number(surah) === 67) return '/data/rayan-al-mulk.mp3'
   if (reciter === 'Dukhain') {
     return `${DUKHAIN_BASE}/${String(surah).padStart(3, '0')}.mp3`
   }
