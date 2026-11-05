@@ -1,5 +1,17 @@
 @import "tailwindcss";
 
+@font-face {
+  font-family: "Noto Kufi Arabic";
+  src: url("/fonts/NotoKufiArabic.ttf") format("truetype");
+  font-weight: 100 900;
+}
+
+@font-face {
+  font-family: "RIT Keraleeyam";
+  src: url("/fonts/RIT-Keraleeyam-Regular.woff2") format("woff2");
+  font-weight: 400;
+}
+
 .landing-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 20px; margin: 0 0 64px; }
 .landing-actions a { display: inline-flex; align-items: center; gap: 10px; white-space: normal; }
 .landing-secondary { color: var(--t-primary); padding: 12px 0; font-weight: 600; }

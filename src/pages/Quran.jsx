@@ -15,7 +15,9 @@ import {
 } from '@phosphor-icons/react'
 import {
   RECITERS,
-  FONT_PAIRS,
+  QURAN_FONTS,
+  savedQuranFonts,
+  loadQuranFonts,
   ayahUrl,
   surahAudioUrl,
   surahMode,
@@ -186,10 +188,16 @@ export default function Quran() {
   const [copying, setCopying] = useState(false)
   const [copied, setCopied] = useState(false)
 
-  const [fontPairId, setFontPairId] = useState(
-    () => localStorage.getItem('salafic-font-pair') || FONT_PAIRS[0].id,
-  )
-  const fontPair = FONT_PAIRS.find((p) => p.id === fontPairId) || FONT_PAIRS[0]
+  const [fontPair, setFontPair] = useState(() => savedQuranFonts(localStorage))
+  const [fontStatus, setFontStatus] = useState(null)
+  useEffect(() => {
+    let active = true
+    loadQuranFonts(fontPair).then(
+      () => active && setFontStatus({ pair: fontPair, ok: true }),
+      () => active && setFontStatus({ pair: fontPair, ok: false }),
+    )
+    return () => { active = false }
+  }, [fontPair])
 
   const [surahTexts, setSurahTexts] = useState(null)
   const surahTextsRef = useRef(null)
@@ -283,7 +291,7 @@ export default function Quran() {
     if (slides.some((s) => !s)) return null
     previewDataRef.current = slides
     return buildLayouts(slides, fontPair.ar, fontPair.ml)
-  }, [surahTexts, nowWords, fontPair, clampedStart, clampedEnd, reciter, surahNumber])
+  }, [surahTexts, nowWords, fontPair, fontStatus, clampedStart, clampedEnd, reciter, surahNumber])
 
   async function loadNowWords(ayahNumber) {
     try {
@@ -900,12 +908,7 @@ useEffect(() => {
       }
       setRenderMode(offline ? 'offline' : 'record')
       setVideo('render')
-      await Promise.all(
-        ['400', '500', '600', '700'].flatMap((w) => [
-          document.fonts.load(`${w} 76px ${fontPair.ar}`),
-          document.fonts.load(`${w} 40px ${fontPair.ml}`),
-        ]),
-      ).catch(() => {})
+      await loadQuranFonts(fontPair)
       const args = {
         surahNumber,
         surahLabel: texts.englishName.toUpperCase(),
@@ -1136,31 +1139,22 @@ useEffect(() => {
 
           {surahs ? (
             <div className="mt-6 flex flex-wrap items-center gap-3">
-              <span className="text-xs font-semibold tracking-wider text-ink-secondary uppercase">
-                Fonts
-              </span>
-              {FONT_PAIRS.map((p) => (
-                <button
-                  key={p.id}
-                  type="button"
-                  onClick={() => {
-                    setFontPairId(p.id)
-                    localStorage.setItem('salafic-font-pair', p.id)
-                  }}
-                  className={`inline-flex h-12 items-center gap-3 rounded-full border px-4 text-sm transition-colors duration-200 ${
-                    fontPair.id === p.id
-                      ? 'border-gold bg-gold/10 text-ink'
-                      : 'border-line bg-surface text-ink-secondary hover:bg-surface-subtle'
-                  }`}
-                >
-                  <span dir="rtl" className="text-lg leading-none" style={{ fontFamily: p.ar }}>
-                    بسم الله
-                  </span>
-                  <span className="text-lg leading-none" style={{ fontFamily: p.ml }}>
-                    ഖുർആൻ
-                  </span>
-                </button>
+              {Object.entries(QURAN_FONTS).map(([script, options]) => (
+                <label key={script} className="grid gap-1 text-sm text-ink-secondary">
+                  {script === 'ar' ? 'Arabic font' : 'Malayalam font'}
+                  <select className="h-12 rounded-full border border-line bg-surface px-4 text-ink"
+                    value={fontPair[script]} disabled={video !== 'idle'}
+                    onChange={({ target: { value } }) => {
+                      setFontPair(current => ({ ...current, [script]: value }))
+                      localStorage.setItem('salafic-font-' + script, value)
+                    }}>
+                    {options.map(font => <option key={font} value={font}>{font.slice(1, -1)}</option>)}
+                  </select>
+                </label>
               ))}
+              {fontStatus?.pair === fontPair && !fontStatus.ok && (
+                <span role="status">A selected font couldn’t load. Choose another font or check your connection before exporting.</span>
+              )}
             </div>
           ) : null}
 

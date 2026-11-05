@@ -36,6 +36,31 @@ export const FONT_PAIRS = [
   },
 ]
 
+export const QURAN_FONTS = {
+  ar: [...FONT_PAIRS.map(p => p.ar), '"Noto Kufi Arabic"'],
+  ml: [...FONT_PAIRS.map(p => p.ml), '"RIT Keraleeyam"'],
+}
+
+export function savedQuranFonts(storage) {
+  const legacy = FONT_PAIRS.find(p => p.id === storage.getItem('salafic-font-pair')) || FONT_PAIRS[0]
+  return Object.fromEntries(Object.entries(QURAN_FONTS).map(([script, options]) => {
+    const saved = storage.getItem('salafic-font-' + script)
+    return [script, options.includes(saved) ? saved : legacy[script]]
+  }))
+}
+
+export async function loadQuranFonts(fonts) {
+  const requests = [
+    [fonts.ar, 600, 'بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ'],
+    [fonts.ml, 500, 'ഖുർആൻ'],
+    [fonts.ml, 600, 'ഖുർആൻ'],
+  ]
+  await Promise.all(requests.map(async ([family, weight, sample]) => {
+    const faces = await document.fonts.load(`${weight} 40px ${family}`, sample)
+    if (!faces.length) throw new Error('Selected font is unavailable: ' + family)
+  }))
+}
+
 const SURAHS_KEY = 'salafic-quran-surahs'
 const SURAHS_TTL = 7 * 24 * 60 * 60 * 1000
 
