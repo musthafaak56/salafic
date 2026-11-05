@@ -42,6 +42,15 @@ export async function loadKaraoke(reciter, surah) {
     fetchJson(timingUrl, timingCache),
     fetchJson(ML_FILE, mlCache),
   ])
+  // Keep the recording's natural breath between ayahs on the preceding
+  // slide. Word offsets remain relative to their original start.
+  if (reciter === 'Rayan') {
+    return { ml, timings: timings.map((row, i) => {
+      const next = timings[i + 1]
+      return next?.surah === row.surah && next.ayah === row.ayah + 1
+        ? { ...row, ayahEndMs: next.ayahStartMs } : row
+    }) }
+  }
   return { timings, ml }
 }
 

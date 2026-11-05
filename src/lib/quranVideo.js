@@ -542,7 +542,7 @@ export async function renderAyahVideo({ surahNumber, surahLabel, ayahs, reciter,
     let surahBuf = null
     let perAyahBufs = null
     let windows = null
-    const continuous = reciter === 'Dukhain'
+    const continuous = surahMode(reciter)
     const { pad } = rangeTiming(reciter)
     let rangeSource = null
     let t = audio.currentTime + 0.3
@@ -1099,7 +1099,7 @@ export async function renderAyahVideoOffline({
     // largest remaining allocation) can be dropped before video frames start
     // accumulating in memory.
     const audioChunk = Math.max(1024, Math.round(sampleRate * 0.5))
-    let audioWindows = reciter === 'Dukhain'
+    let audioWindows = surahMode(reciter)
       ? [{ ...decoded[0], dur: t }]
       : decoded
     for (let pos = 0; pos < totalSamples; pos += audioChunk) {

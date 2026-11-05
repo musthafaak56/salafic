@@ -15,7 +15,7 @@ export function surahMode(reciter) {
 }
 
 export function rangeTiming(reciter) {
-  return reciter === 'Dukhain' ? { pad: 0, lead: 0 } : { pad: 0.8, lead: 0.3 }
+  return surahMode(reciter) ? { pad: 0, lead: 0 } : { pad: 0.8, lead: 0.3 }
 }
 
 // Selectable font pairs for the recited-word view and video.

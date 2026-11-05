@@ -414,20 +414,9 @@ export default function Quran() {
         setCurrentAyah(playQueueRef.current[next])
         lastActiveRef.current = -1
         setActiveWordIndex(-1)
-        if (reciter === 'Dukhain') {
+        if (surahMode(reciter)) {
           // Adjacent ayahs share one continuous recording. Only change the text.
           await loadNowWords(playQueueRef.current[next])
-        } else if (surahMode(reciter)) {
-          // Keep the same surah file open; hold at the window end while the
-          // next ayah's words load, then move to its window.
-          audioRef.current?.pause()
-          await loadNowWords(playQueueRef.current[next])
-          if (audioRef.current) {
-            seekToWordStart(audioRef.current, nowWordRef.current)
-            audioRef.current.play().catch(() => {
-              setPlaying(false)
-            })
-          }
         } else {
           loadNowWords(playQueueRef.current[next])
           if (audioRef.current) {
@@ -468,7 +457,7 @@ export default function Quran() {
     const end = bundle.words.endMs
     const t = audioRef.current.currentTime * 1000
     if (typeof start === 'number' && typeof end === 'number') {
-      if (t >= end - (reciter === 'Dukhain' ? 0 : 40) && !el.paused && !advancingRef.current) {
+      if (t >= end - (surahMode(reciter) ? 0 : 40) && !el.paused && !advancingRef.current) {
         handleEnded()
         return
       }
