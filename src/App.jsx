@@ -26,6 +26,7 @@ import CenterCommunity, { CommunityEditor } from './pages/CenterCommunity'
 import CenterEducation from './pages/CenterEducation'
 import CenterHifdh from './pages/CenterHifdh'
 import LMTracker from './pages/LMTracker'
+import { Uae, KhutbaReader } from './pages/Uae'
 import {
   CenterAdminLayout,
   CenterOverview,
@@ -95,6 +96,8 @@ export default function App() {
             <Routes>
               <Route path="/" element={<Home />} />
               <Route path="/lmtracker" element={<LMTracker />} />
+              <Route path="/uae" element={<Uae />} />
+              <Route path="/uae/khutba/:date?" element={<KhutbaReader />} />
               <Route path="/centers" element={<Centers />} />
               <Route path="/login" element={<Login />} />
               <Route path="/register" element={<Register />} />

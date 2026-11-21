@@ -14,6 +14,7 @@ export default function Home() {
         <Link className="platform-button" to="/centers">
           <MagnifyingGlass size={20} /> Find a masjid or center
         </Link>
+        <Link className="platform-button" to="/uae" aria-label="UAE Friday khutba">UAE</Link>
         <Link className="landing-secondary" to="/quran">
           <Headphones size={20} /> Listen to the Quran
         </Link>
